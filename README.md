@@ -31,9 +31,35 @@ Project Workbench reads existing Markdown files. It does not create a database o
 
 Existing values are preserved when read. The plugin does not batch-migrate or rename existing notes.
 
-## Development and test Vault
+## Install from GitHub Release
+
+普通用户不需要安装 Node.js、npm 或任何开发依赖。直接从 [Project Workbench 0.1.0 Release](https://github.com/PHLens/obsidian-project-workbench/releases/tag/0.1.0) 下载以下三个文件：
+
+```text
+main.js
+manifest.json
+styles.css
+```
+
+在目标 Vault 中创建插件目录：
+
+```text
+.obsidian/plugins/research-workbench/
+```
+
+将三个文件放进去，然后在 Obsidian 的 **设置 → 社区插件 → 已安装插件** 中启用 **Project Workbench**。
+
+桌面端和手机端都使用同一套文件。手机端同样不需要 npm；如果使用 Nutstore 同步 `.obsidian-mobile` 配置，也可以让插件目录和启用状态随 Vault 同步。首次安装后，在手机端重新加载 Obsidian 并启用插件即可。
+
+插件内部 ID 保持为 `research-workbench`，因此目录名和已有配置使用这个 ID；显示名称是 **Project Workbench**。
+
+安装后，从命令面板运行 **Open project workbench**。
+
+## Developer setup and test Vault
 
 All development is performed in the repository's `test-vault/`. The fixture is intentionally generic and contains a Demo Project; it is safe to reset or delete.
+
+开发者如果要修改源码或重新构建，才需要 npm：
 
 ```bash
 npm install
@@ -55,7 +81,7 @@ To try the plugin in Obsidian:
 
 ## Build output
 
-`npm run build` produces:
+开发者运行 `npm run build` 会产生：
 
 - `dist/main.js` — the Obsidian plugin bundle;
 - `dist/context/export-context.js` — the Node CLI context exporter.
