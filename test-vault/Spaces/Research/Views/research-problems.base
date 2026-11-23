@@ -1,0 +1,12 @@
+filters:
+  and:
+    - file.inFolder("Spaces/Research/Problems")
+    - file.hasTag("problem")
+views:
+  - type: table
+    name: All Problems
+    order:
+      - file.name
+      - status
+      - stage
+      - project

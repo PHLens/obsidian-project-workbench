@@ -1,0 +1,2 @@
+import type { ProjectSnapshot } from '../../model/types';
+export function renderProjectNotePanel(container: HTMLElement, snapshot: ProjectSnapshot, open: () => void): HTMLElement { const panel = container.createDiv({ cls: 'rw-panel rw-project-note-panel' }); panel.createEl('h2', { text: '项目笔记' }); panel.createEl('p', { cls: 'rw-panel-lead', text: '使用 Obsidian 原生编辑器阅读和修改项目正文。' }); panel.createEl('button', { cls: 'rw-button rw-primary', text: '打开项目笔记' }).onclick = open; return panel; }
