@@ -18,8 +18,6 @@ The initial release uses a research-editorial layout:
 - create, edit, associate, focus, archive, and open actions;
 - conflict-aware Markdown frontmatter writes.
 
-The plugin keeps the internal ID `research-workbench` for compatibility with existing Obsidian configurations. The displayed product name is **Project Workbench**.
-
 ## Data model
 
 Project Workbench reads existing Markdown files. It does not create a database or a second project-state store.
@@ -58,7 +56,7 @@ To try the plugin in Obsidian:
 `npm run build` produces:
 
 - `dist/main.js` — the Obsidian plugin bundle;
-- `dist/context/export-context.js` — the Node CLI context exporter.
+- `dist/cli/export-context.js` — the Node CLI context exporter.
 
 Only the plugin entry bundle is intended for mobile Obsidian. The plugin bundle contains no Node.js or Electron imports.
 

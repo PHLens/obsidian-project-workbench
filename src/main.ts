@@ -9,11 +9,11 @@ export default class ResearchWorkbenchPlugin extends Plugin {
     this.settings = { ...DEFAULT_SETTINGS, ...(await this.loadData() ?? {}) };
     this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf));
     this.addSettingTab(new ResearchWorkbenchSettingTab(this.app, this));
-    this.addCommand({ id: 'open-research-workbench', name: 'Open project workbench', callback: () => this.activate() });
-    this.addCommand({ id: 'create-research-project', name: 'Create project', callback: () => this.withView((view) => view.openProjectWizard()) });
-    this.addCommand({ id: 'create-research-problem', name: 'Create problem', callback: () => this.withView((view) => (view as any).createProblem?.()) });
-    this.addCommand({ id: 'create-research-task', name: 'Create task', callback: () => this.withView((view) => (view as any).createTask?.()) });
-    this.addCommand({ id: 'record-research-idea', name: 'Record project idea', callback: () => this.withView((view) => (view as any).createPending?.()) });
+    this.addCommand({ id: 'open-workbench', name: 'Open workbench', callback: () => void this.activate() });
+    this.addCommand({ id: 'create-project', name: 'Create project', callback: () => void this.withView((view) => view.openProjectWizard()) });
+    this.addCommand({ id: 'create-problem', name: 'Create problem', callback: () => void this.withView((view) => view.createProblem()) });
+    this.addCommand({ id: 'create-task', name: 'Create task', callback: () => void this.withView((view) => view.createTask()) });
+    this.addCommand({ id: 'record-idea', name: 'Record idea', callback: () => void this.withView((view) => view.createPending()) });
   }
   async saveSettings(): Promise<void> { await this.saveData(this.settings); }
   private async withView(action: (view: ResearchWorkbenchView) => Promise<void> | void): Promise<void> { await this.activate(); const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)[0]; if (leaf?.view instanceof ResearchWorkbenchView) await action(leaf.view); }

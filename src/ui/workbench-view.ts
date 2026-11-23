@@ -1,4 +1,4 @@
-import { ItemView, Notice, TFile, WorkspaceLeaf, Modal, Menu } from 'obsidian';
+import { ItemView, Notice, TFile, WorkspaceLeaf, Menu, ConfirmationModal } from 'obsidian';
 import { buildProjectIndex, buildProjectSnapshot, buildTimelineEvents } from '../model/project-snapshot';
 import type { ProjectSnapshot, VaultFile } from '../model/types';
 import { DEFAULT_WORKBENCH_STATE, type WorkbenchViewState } from '../model/view-state';
@@ -111,9 +111,11 @@ export class ResearchWorkbenchView extends ItemView {
     menu.showAtMouseEvent(event);
   }
   private async confirmDeleteProject(file: TFile): Promise<void> {
-    const confirmed = window.confirm(`确定删除项目“${file.basename}”吗？\n\n只删除项目文件，不删除关联的问题、任务或资料。`);
-    if (!confirmed) return;
-    try { await this.app.vault.delete(file); await this.refresh(); } catch (error) { new Notice(String(error)); }
+    const modal = new ConfirmationModal(this.app);
+    modal.setContent(`确定删除项目“${file.basename}”吗？\n\n只删除项目文件，不删除关联的问题、任务或资料。`);
+    modal.addButton((button) => button.setButtonText('删除项目').setWarning().onClick(async () => { try { await this.app.vault.adapter.remove(file.path); await this.refresh(); } catch (error) { new Notice(String(error)); } }));
+    modal.addCancelButton('取消');
+    modal.open();
   }
   private async editProblem(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
@@ -133,8 +135,8 @@ export class ResearchWorkbenchView extends ItemView {
       this.projectPath = created.projectPath; this.state.projectPath = created.projectPath; await this.refresh(); await this.openFile(created.problemPath);
     }).open();
   }
-  private async createProblem(): Promise<void> { new ProblemModal(this.app, async (result) => { if (!this.snapshot) return; const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: 'inbox', stage: 'inbox', researchRole: 'mainline', focus: false }); await this.refresh(); await this.openFile(path); }).open(); }
-  private async createTask(): Promise<void> { new TaskModal(this.app, async (title) => { const path = `Spaces/GTD/Tasks/${title.trim()}.md`; await this.app.vault.create(path, `---\nstatus: open\ntags: [task]\nprojects: ["[[${this.snapshot?.project.title ?? 'Project'}]]"]\n---\n# ${title.trim()}\n`); await this.refresh(); }).open(); }
-  private async createPending(): Promise<void> { new PendingModal(this.app, async (text, source) => { const path = `Spaces/Research/Ideas/${Date.now()}-pending.md`; await this.app.vault.create(path, `---\ntype: idea\nproject: "[[${this.snapshot?.project.title ?? 'Project'}]]"\npending: true\nprocessing_status: pending\nsource: ${JSON.stringify(source)}\n---\n# Pending discussion\n\n${text}\n`); await this.refresh(); }).open(); }
+  async createProblem(): Promise<void> { new ProblemModal(this.app, async (result) => { if (!this.snapshot) return; const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: 'inbox', stage: 'inbox', researchRole: 'mainline', focus: false }); await this.refresh(); await this.openFile(path); }).open(); }
+  async createTask(): Promise<void> { new TaskModal(this.app, async (title) => { const path = `Spaces/GTD/Tasks/${title.trim()}.md`; await this.app.vault.create(path, `---\nstatus: open\ntags: [task]\nprojects: ["[[${this.snapshot?.project.title ?? 'Project'}]]"]\n---\n# ${title.trim()}\n`); await this.refresh(); }).open(); }
+  async createPending(): Promise<void> { new PendingModal(this.app, async (text, source) => { const path = `Spaces/Research/Ideas/${Date.now()}-pending.md`; await this.app.vault.create(path, `---\ntype: idea\nproject: "[[${this.snapshot?.project.title ?? 'Project'}]]"\npending: true\nprocessing_status: pending\nsource: ${JSON.stringify(source)}\n---\n# Pending discussion\n\n${text}\n`); await this.refresh(); }).open(); }
   private async transitionPending(path: string, status: 'pending' | 'linked' | 'deferred' | 'reference'): Promise<void> { const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return; try { await updatePendingInput(this.app, path, status, sha256(await this.app.vault.read(file))); await this.refresh(); } catch (error) { new Notice(String(error)); } }
 }
