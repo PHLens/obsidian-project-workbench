@@ -7,7 +7,7 @@ export class ResearchWorkbenchSettingTab extends PluginSettingTab {
   private readonly workbenchPlugin: Plugin & { settings: ResearchWorkbenchSettings; saveSettings: () => Promise<void> };
   constructor(app: App, plugin: Plugin & { settings: ResearchWorkbenchSettings; saveSettings: () => Promise<void> }) { super(app, plugin); this.workbenchPlugin = plugin; }
   display(): void {
-    const plugin = this.workbenchPlugin; this.containerEl.empty(); new Setting(this.containerEl).setName('Project Workbench').setHeading();
+    const plugin = this.workbenchPlugin; this.containerEl.empty(); new Setting(this.containerEl).setName('Appearance').setHeading();
     new Setting(this.containerEl).setName('信息密度').addDropdown((dropdown) => dropdown.addOptions({ comfortable: '舒适', standard: '标准', compact: '紧凑' }).setValue(plugin.settings.density).onChange(async (value) => { plugin.settings.density = value as WorkbenchDensity; await plugin.saveSettings(); }));
     new Setting(this.containerEl).setName('强调色').addDropdown((dropdown) => dropdown.addOptions({ theme: '跟随 Obsidian', indigo: '靛紫' }).setValue(plugin.settings.accentMode).onChange(async (value) => { plugin.settings.accentMode = value as ResearchWorkbenchSettings['accentMode']; await plugin.saveSettings(); }));
     new Setting(this.containerEl).setName('标签显示').addDropdown((dropdown) => dropdown.addOptions({ full: '完整', compact: '紧凑', icon: '只显示图标' }).setValue(plugin.settings.tagMode).onChange(async (value) => { plugin.settings.tagMode = value as ResearchWorkbenchSettings['tagMode']; await plugin.saveSettings(); }));
