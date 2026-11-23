@@ -22,6 +22,7 @@ export interface WorkbenchActions {
   createProject: () => void;
   createProblem: () => void;
   createTask: () => void;
+  projectActions: (path: string) => void;
   openTask: (path: string) => void;
   editTask: (path: string) => void;
   associateProblem: () => void;

@@ -28,6 +28,7 @@
 .rw-project-choice-name { flex:1; font-weight:600; }
 .rw-project-choice-arrow { color:var(--rw-muted); font-size:20px; }
 .rw-sidebar-action { color:var(--rw-muted); }
+.rw-project-actions { width:100%; padding:5px 10px; border:0; background:transparent; color:var(--rw-accent); text-align:left; font-size:12px; cursor:pointer; }
 .rw-sidebar-rule { height:1px; margin: 14px 8px; background:var(--rw-border); }
 .rw-sidebar-nav { display:flex; flex-direction:column; gap:4px; }
 .rw-sidebar-spacer { flex:1; min-height:40px; }
