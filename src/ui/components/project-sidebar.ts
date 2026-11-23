@@ -13,10 +13,7 @@ export function renderProjectSidebar(container: HTMLElement, projects: ProjectSu
     button.createSpan({ cls: 'rw-project-choice-name', text: project.title });
     button.createSpan({ cls: 'rw-project-choice-arrow', text: '›' });
     button.onclick = () => actions.selectProject(project.path);
-    if (project.path === state.projectPath) {
-      const menu = projectGroup.createEl('button', { cls: 'rw-project-actions', text: '⋯ 项目操作' });
-      menu.onclick = (event) => { event.stopPropagation(); actions.projectActions(project.path); };
-    }
+    button.oncontextmenu = (event) => { event.preventDefault(); event.stopPropagation(); actions.projectContextMenu(project.path, event); };
   }
   projectGroup.createEl('button', { cls: 'rw-sidebar-action', text: '＋  新建项目' }).onclick = actions.createProject;
   aside.createDiv({ cls: 'rw-sidebar-rule' });
