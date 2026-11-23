@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, lstatSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import type { VaultFile } from '../model/types';
+import type { VaultFile } from '../../src/model/types';
 
 export function readMarkdownFiles(root: string): VaultFile[] {
   const out: VaultFile[] = [];

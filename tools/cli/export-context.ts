@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, renameSync, realpathSync, lstatSync } from 'node:fs';
 import { resolve, sep, relative } from 'node:path';
-import { buildProjectSnapshot } from '../model/project-snapshot';
-import { readMarkdownFiles } from '../adapters/node-vault';
+import { buildProjectSnapshot } from '../../src/model/project-snapshot';
+import { readMarkdownFiles } from './node-vault';
 
 export function sha256(text: string): string { return createHash('sha256').update(text).digest('hex'); }
 export function assertSafeVault(vault: string): string {

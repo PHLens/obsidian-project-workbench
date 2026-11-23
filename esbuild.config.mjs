@@ -10,12 +10,12 @@ await esbuild.build({
   sourcemap: true,
 });
 await esbuild.build({
-  entryPoints: ['src/context/export-context.ts'],
+  entryPoints: ['tools/cli/export-context.ts'],
   bundle: true,
   format: 'esm',
   platform: 'node',
   target: 'node24',
   external: ['yaml'],
-  outfile: 'dist/context/export-context.js',
+  outfile: 'dist/cli/export-context.js',
   sourcemap: true,
 });

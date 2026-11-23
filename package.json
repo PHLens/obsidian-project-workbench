@@ -1,13 +1,14 @@
 {
   "name": "research-workbench",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "node esbuild.config.mjs",
-    "check": "npm run typecheck && npm test && npm run build"
+    "check": "npm run typecheck && npm test && npm run build",
+    "lint:community": "echo \"Run the Obsidian Community scanner from the directory after publishing\""
   },
   "dependencies": {
     "obsidian": "latest",

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { mkdirSync, symlinkSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { applyUpdatePlan } from '../src/context/export-context';
-import { sha256 } from '../src/context/export-context';
+import { applyUpdatePlan } from '../tools/cli/export-context';
+import { sha256 } from '../tools/cli/export-context';
 const root=resolve('test-vault'); const project='Spaces/Research/Projects/Demo Project.md';
 describe('update safety',()=>{
  it('rejects nested vault roots and non-markdown paths',()=>{expect(()=>applyUpdatePlan(resolve('test-vault/nested'),[],false)).toThrow('isolated'); expect(()=>applyUpdatePlan(root,[{path:'Spaces/Research/Views/research-problems.base',expectedHash:'x',kind:'append',content:'x'}],false)).toThrow()});

@@ -6532,6 +6532,11 @@ function renderProjectSidebar(container, projects, state, actions) {
     button.createSpan({ cls: "rw-project-choice-name", text: project.title });
     button.createSpan({ cls: "rw-project-choice-arrow", text: "\u203A" });
     button.onclick = () => actions.selectProject(project.path);
+    button.oncontextmenu = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      actions.projectContextMenu(project.path, event);
+    };
   }
   projectGroup.createEl("button", { cls: "rw-sidebar-action", text: "\uFF0B  \u65B0\u5EFA\u9879\u76EE" }).onclick = actions.createProject;
   aside.createDiv({ cls: "rw-sidebar-rule" });
@@ -6830,15 +6835,11 @@ var ProjectWizard = class extends import_obsidian.Modal {
     this.submit = submit;
   }
   onOpen() {
-    this.titleEl.setText("New research project");
+    this.titleEl.setText("New project");
     const form = this.contentEl.createDiv();
-    const name = form.createEl("input", { type: "text", placeholder: "Project name" });
-    const goal = form.createEl("textarea", { placeholder: "Overall research goal" });
-    const problem = form.createEl("input", { type: "text", placeholder: "First research problem" });
-    for (const el of [name, goal, problem]) {
-      el.style.width = "100%";
-      el.style.marginBottom = "8px";
-    }
+    const name = form.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "Project name" });
+    const goal = form.createEl("textarea", { cls: "rw-modal-textarea", placeholder: "Overall project goal" });
+    const problem = form.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "First project problem" });
     const actions = form.createDiv({ cls: "modal-button-container" });
     const cancel = actions.createEl("button", { text: "Cancel" });
     const create = actions.createEl("button", { text: "Create project", cls: "mod-cta" });
@@ -6869,9 +6870,8 @@ var TaskModal = class extends import_obsidian2.Modal {
   }
   onOpen() {
     this.titleEl.setText("New task");
-    const input = this.contentEl.createEl("input", { type: "text", placeholder: "Task title" });
-    input.style.width = "100%";
-    const b = this.contentEl.createEl("button", { text: "Create", cls: "mod-cta" });
+    const input = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "Task title" });
+    const b = this.contentEl.createEl("button", { text: "Create", cls: "mod-cta rw-modal-button" });
     const run = async () => {
       const v = input.value.trim();
       if (!v) {
@@ -6898,13 +6898,9 @@ var PendingModal = class extends import_obsidian3.Modal {
   }
   onOpen() {
     this.titleEl.setText("Mark for discussion");
-    const text = this.contentEl.createEl("textarea", { placeholder: "What should be discussed?" });
-    const source2 = this.contentEl.createEl("input", { type: "text", placeholder: "Source URL or note (optional)" });
-    for (const el of [text, source2]) {
-      el.style.width = "100%";
-      el.style.marginBottom = "8px";
-    }
-    const b = this.contentEl.createEl("button", { text: "Mark pending", cls: "mod-cta" });
+    const text = this.contentEl.createEl("textarea", { cls: "rw-modal-textarea", placeholder: "What should be discussed?" });
+    const source2 = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "Source URL or note (optional)" });
+    const b = this.contentEl.createEl("button", { text: "Mark pending", cls: "mod-cta rw-modal-button" });
     b.onclick = async () => {
       if (!text.value.trim()) {
         new import_obsidian3.Notice("Discussion item is required.");
@@ -6926,13 +6922,9 @@ var ProblemModal = class extends import_obsidian4.Modal {
   }
   onOpen() {
     this.titleEl.setText("New research problem");
-    const title = this.contentEl.createEl("input", { type: "text", placeholder: "Research problem title" });
-    const question = this.contentEl.createEl("textarea", { placeholder: "What question should this problem answer?" });
-    title.style.width = "100%";
-    question.style.width = "100%";
-    question.style.marginTop = "8px";
-    const button = this.contentEl.createEl("button", { text: "Create problem", cls: "mod-cta" });
-    button.style.marginTop = "8px";
+    const title = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "Research problem title" });
+    const question = this.contentEl.createEl("textarea", { cls: "rw-modal-textarea", placeholder: "What question should this problem answer?" });
+    const button = this.contentEl.createEl("button", { text: "Create problem", cls: "mod-cta rw-modal-button" });
     const run = async () => {
       const result = { title: title.value.trim(), question: question.value.trim() };
       if (!result.title || !result.question) {
@@ -7027,8 +7019,8 @@ ${body.startsWith("\n") ? body : `
 ${body}`}`;
 }
 async function readTFile(app, path) {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (!file || !file.path) throw new Error(`\u627E\u4E0D\u5230\u6587\u4EF6\uFF1A${path}`);
+  const file = app.vault.getFileByPath(path);
+  if (!file) throw new Error(`\u627E\u4E0D\u5230\u6587\u4EF6\uFF1A${path}`);
   return file;
 }
 async function writeFrontmatterWithExpectedHash(app, path, expectedHash, mutate) {
@@ -7052,7 +7044,7 @@ async function createProjectBundle(app, input) {
     await app.vault.create(text.projectPath, text.project);
   } catch (error) {
     const created = app.vault.getAbstractFileByPath(text.problemPath);
-    if (created) await app.vault.trash(created, true);
+    if (created && "extension" in created) await app.fileManager.trashFile(created);
     throw new Error(`\u9879\u76EE\u521B\u5EFA\u5931\u8D25\uFF0C\u5DF2\u56DE\u6EDA\u9996\u4E2A\u95EE\u9898\u6587\u4EF6\uFF1A${String(error)}`);
   }
   return { projectPath: text.projectPath, problemPath: text.problemPath };
@@ -7095,7 +7087,7 @@ ${input.question}
     };
     await writeFrontmatterWithExpectedHash(app, projectPath, sha256(projectRaw), links);
   } catch (error) {
-    await app.vault.trash(created, true);
+    await app.fileManager.trashFile(created);
     throw error;
   }
   return problemPath;
@@ -7181,14 +7173,10 @@ var EditProblemModal = class extends import_obsidian5.Modal {
   }
   onOpen() {
     this.titleEl.setText("\u7F16\u8F91\u7814\u7A76\u95EE\u9898");
-    const status = this.contentEl.createEl("input", { type: "text", placeholder: "\u72B6\u6001", value: this.initial.status });
-    const stage = this.contentEl.createEl("input", { type: "text", placeholder: "\u9636\u6BB5", value: this.initial.stage });
-    const role = this.contentEl.createEl("input", { type: "text", placeholder: "\u8D44\u6E90\u89D2\u8272", value: this.initial.researchRole });
-    for (const input of [status, stage, role]) {
-      input.style.width = "100%";
-      input.style.marginBottom = "8px";
-    }
-    const button = this.contentEl.createEl("button", { cls: "mod-cta", text: "\u4FDD\u5B58\u95EE\u9898\u5C5E\u6027" });
+    const status = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "\u72B6\u6001", value: this.initial.status });
+    const stage = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "\u9636\u6BB5", value: this.initial.stage });
+    const role = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "\u8D44\u6E90\u89D2\u8272", value: this.initial.researchRole });
+    const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u4FDD\u5B58\u95EE\u9898\u5C5E\u6027" });
     button.onclick = async () => {
       if (!status.value.trim() || !stage.value.trim() || !role.value.trim()) {
         new import_obsidian5.Notice("\u72B6\u6001\u3001\u9636\u6BB5\u548C\u8D44\u6E90\u89D2\u8272\u4E0D\u80FD\u4E3A\u7A7A\u3002");
@@ -7214,13 +7202,12 @@ var AssociateProblemModal = class extends import_obsidian6.Modal {
   }
   onOpen() {
     this.titleEl.setText("\u5173\u8054\u5DF2\u6709\u7814\u7A76\u95EE\u9898");
-    const select = this.contentEl.createEl("select");
-    select.style.width = "100%";
+    const select = this.contentEl.createEl("select", { cls: "rw-modal-control" });
     for (const problem of this.problems) select.createEl("option", { value: problem.path, text: problem.title });
     const focus = this.contentEl.createEl("input", { type: "checkbox" });
     const label = this.contentEl.createEl("label", { text: " \u540C\u65F6\u8BBE\u4E3A\u672C\u9636\u6BB5\u7126\u70B9" });
     label.prepend(focus);
-    const button = this.contentEl.createEl("button", { cls: "mod-cta", text: "\u5173\u8054\u5230\u5F53\u524D\u9879\u76EE" });
+    const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u5173\u8054\u5230\u5F53\u524D\u9879\u76EE" });
     button.onclick = async () => {
       if (!select.value) {
         new import_obsidian6.Notice("\u6CA1\u6709\u53EF\u5173\u8054\u7684\u95EE\u9898\u3002");
@@ -7245,13 +7232,9 @@ var EditGoalsModal = class extends import_obsidian7.Modal {
   }
   onOpen() {
     this.titleEl.setText("\u7F16\u8F91\u9636\u6BB5\u76EE\u6807");
-    const gate = this.contentEl.createEl("textarea", { placeholder: "\u5F53\u524D\u95E8\u69DB", value: this.initial.currentGate });
-    const milestone = this.contentEl.createEl("textarea", { placeholder: "\u4E0B\u4E00\u91CC\u7A0B\u7891", value: this.initial.nextMilestone });
-    for (const input of [gate, milestone]) {
-      input.style.width = "100%";
-      input.style.marginBottom = "8px";
-    }
-    const button = this.contentEl.createEl("button", { cls: "mod-cta", text: "\u4FDD\u5B58\u9636\u6BB5\u76EE\u6807" });
+    const gate = this.contentEl.createEl("textarea", { cls: "rw-modal-textarea", placeholder: "\u5F53\u524D\u95E8\u69DB", value: this.initial.currentGate });
+    const milestone = this.contentEl.createEl("textarea", { cls: "rw-modal-textarea", placeholder: "\u4E0B\u4E00\u91CC\u7A0B\u7891", value: this.initial.nextMilestone });
+    const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u4FDD\u5B58\u9636\u6BB5\u76EE\u6807" });
     button.onclick = async () => {
       if (!gate.value.trim() && !milestone.value.trim()) {
         new import_obsidian7.Notice("\u81F3\u5C11\u586B\u5199\u4E00\u4E2A\u76EE\u6807\u5B57\u6BB5\u3002");
@@ -7277,14 +7260,10 @@ var EditTaskModal = class extends import_obsidian8.Modal {
   }
   onOpen() {
     this.titleEl.setText("\u7F16\u8F91\u4EFB\u52A1");
-    const status = this.contentEl.createEl("input", { type: "text", placeholder: "\u72B6\u6001", value: this.initial.status });
-    const priority = this.contentEl.createEl("input", { type: "text", placeholder: "\u4F18\u5148\u7EA7", value: this.initial.priority });
-    const due = this.contentEl.createEl("input", { type: "text", placeholder: "\u622A\u6B62\u65E5\u671F", value: this.initial.due });
-    for (const input of [status, priority, due]) {
-      input.style.width = "100%";
-      input.style.marginBottom = "8px";
-    }
-    const button = this.contentEl.createEl("button", { cls: "mod-cta", text: "\u4FDD\u5B58\u4EFB\u52A1" });
+    const status = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "\u72B6\u6001", value: this.initial.status });
+    const priority = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "\u4F18\u5148\u7EA7", value: this.initial.priority });
+    const due = this.contentEl.createEl("input", { cls: "rw-modal-control", type: "text", placeholder: "\u622A\u6B62\u65E5\u671F", value: this.initial.due });
+    const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u4FDD\u5B58\u4EFB\u52A1" });
     button.onclick = async () => {
       if (!status.value.trim()) {
         new import_obsidian8.Notice("\u72B6\u6001\u4E0D\u80FD\u4E3A\u7A7A\u3002");
@@ -7386,6 +7365,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
       createProject: () => void this.openProjectWizard(),
       createProblem: () => void this.createProblem(),
       createTask: () => void this.createTask(),
+      projectContextMenu: (path, event) => this.showProjectContextMenu(path, event),
       openTask: (path) => void this.openFile(path),
       editTask: (path) => void this.editTask(path),
       associateProblem: () => void this.associateProblem(),
@@ -7465,6 +7445,38 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     } catch (error) {
       new import_obsidian9.Notice(String(error));
     }
+  }
+  showProjectContextMenu(path, event) {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof import_obsidian9.TFile)) return;
+    const menu = new import_obsidian9.Menu();
+    menu.addItem((item) => item.setTitle("\u6253\u5F00\u9879\u76EE\u7B14\u8BB0").setIcon("file-text").onClick(() => void this.openFile(path)));
+    menu.addItem((item) => item.setTitle("\u5F52\u6863\u9879\u76EE").setIcon("archive").onClick(async () => {
+      try {
+        await archiveEntity(this.app, path, sha256(await this.app.vault.read(file)));
+        await this.refresh();
+      } catch (error) {
+        new import_obsidian9.Notice(String(error));
+      }
+    }));
+    menu.addItem((item) => item.setTitle("\u5220\u9664\u9879\u76EE").setIcon("trash-2").setWarning(true).onClick(() => void this.confirmDeleteProject(file)));
+    menu.showAtMouseEvent(event);
+  }
+  async confirmDeleteProject(file) {
+    const modal = new import_obsidian9.ConfirmationModal(this.app);
+    modal.setContent(`\u786E\u5B9A\u5220\u9664\u9879\u76EE\u201C${file.basename}\u201D\u5417\uFF1F
+
+\u53EA\u5220\u9664\u9879\u76EE\u6587\u4EF6\uFF0C\u4E0D\u5220\u9664\u5173\u8054\u7684\u95EE\u9898\u3001\u4EFB\u52A1\u6216\u8D44\u6599\u3002`);
+    modal.addButton((button) => button.setButtonText("\u5220\u9664\u9879\u76EE").setWarning().onClick(async () => {
+      try {
+        await this.app.vault.adapter.remove(file.path);
+        await this.refresh();
+      } catch (error) {
+        new import_obsidian9.Notice(String(error));
+      }
+    }));
+    modal.addCancelButton("\u53D6\u6D88");
+    modal.open();
   }
   async editProblem(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
@@ -7602,7 +7614,7 @@ var ResearchWorkbenchSettingTab = class extends import_obsidian10.PluginSettingT
   display() {
     const plugin = this.workbenchPlugin;
     this.containerEl.empty();
-    this.containerEl.createEl("h2", { text: "Project Workbench" });
+    new import_obsidian10.Setting(this.containerEl).setName("Project Workbench").setHeading();
     new import_obsidian10.Setting(this.containerEl).setName("\u4FE1\u606F\u5BC6\u5EA6").addDropdown((dropdown) => dropdown.addOptions({ comfortable: "\u8212\u9002", standard: "\u6807\u51C6", compact: "\u7D27\u51D1" }).setValue(plugin.settings.density).onChange(async (value) => {
       plugin.settings.density = value;
       await plugin.saveSettings();
@@ -7636,11 +7648,11 @@ var ResearchWorkbenchPlugin = class extends import_obsidian11.Plugin {
     this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() ?? {} };
     this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf));
     this.addSettingTab(new ResearchWorkbenchSettingTab(this.app, this));
-    this.addCommand({ id: "open-research-workbench", name: "Open project workbench", callback: () => this.activate() });
-    this.addCommand({ id: "create-research-project", name: "Create project", callback: () => this.withView((view) => view.openProjectWizard()) });
-    this.addCommand({ id: "create-research-problem", name: "Create problem", callback: () => this.withView((view) => view.createProblem?.()) });
-    this.addCommand({ id: "create-research-task", name: "Create task", callback: () => this.withView((view) => view.createTask?.()) });
-    this.addCommand({ id: "record-research-idea", name: "Record project idea", callback: () => this.withView((view) => view.createPending?.()) });
+    this.addCommand({ id: "open-workbench", name: "Open workbench", callback: () => void this.activate() });
+    this.addCommand({ id: "create-project", name: "Create project", callback: () => void this.withView((view) => view.openProjectWizard()) });
+    this.addCommand({ id: "create-problem", name: "Create problem", callback: () => void this.withView((view) => view.createProblem()) });
+    this.addCommand({ id: "create-task", name: "Create task", callback: () => void this.withView((view) => view.createTask()) });
+    this.addCommand({ id: "record-idea", name: "Record idea", callback: () => void this.withView((view) => view.createPending()) });
   }
   async saveSettings() {
     await this.saveData(this.settings);

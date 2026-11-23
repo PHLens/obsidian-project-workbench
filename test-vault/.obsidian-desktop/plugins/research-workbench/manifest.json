@@ -1,9 +1,9 @@
 {
   "id": "research-workbench",
   "name": "Project Workbench",
-  "version": "0.1.0",
-  "minAppVersion": "1.9.0",
-  "description": "A mobile-compatible Markdown-backed project workbench for Obsidian.",
+  "version": "0.1.1",
+  "minAppVersion": "1.13.0",
+  "description": "Plan projects, track problems, and review progress from Markdown notes.",
   "author": "Research",
   "isDesktopOnly": false
 }
