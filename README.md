@@ -8,7 +8,7 @@ Project Workbench is a mobile-compatible Obsidian plugin for project planning, r
 
 The preview shows the intended three-column workbench: project navigation on the left, the active project and problem list in the center, and focus/timeline/inbox context on the right.
 
-The initial release uses a research-editorial layout:
+The workbench uses a research-editorial layout:
 
 - left project and navigation sidebar;
 - center project summary and problem table;
@@ -17,8 +17,6 @@ The initial release uses a research-editorial layout:
 - search, full-text opt-in, multi-select filters, and archived-item toggle;
 - create, edit, associate, focus, archive, and open actions;
 - conflict-aware Markdown frontmatter writes.
-
-The plugin keeps the internal ID `research-workbench` for compatibility with existing Obsidian configurations. The displayed product name is **Project Workbench**.
 
 ## Data model
 
@@ -87,34 +85,6 @@ To try the plugin in Obsidian:
 - `dist/context/export-context.js` — the Node CLI context exporter.
 
 Only the plugin entry bundle is intended for mobile Obsidian. The plugin bundle contains no Node.js or Electron imports.
-
-## Optional formal Vault handoff
-
-The formal Vault is never touched by ordinary tests or builds. Before a handoff, create a readonly baseline outside the Vault:
-
-```bash
-node scripts/verify-formal-vault-readonly.mjs \
-  --vault /path/to/formal-vault \
-  --write-baseline /path/to/backup/formal-baseline.json
-```
-
-After the baseline and a separate configuration backup exist, installation requires an explicit apply flag and the baseline:
-
-```bash
-node scripts/install-formal-vault.mjs \
-  --repo /path/to/project-workbench \
-  --vault /path/to/formal-vault \
-  --formalVault /path/to/formal-vault \
-  --backup /path/to/backup/project-workbench-install \
-  --baseline /path/to/backup/formal-baseline.json \
-  --apply true
-```
-
-The installer accepts the target Vault only when the user supplies it explicitly, requires `--apply true`, keeps backups outside the Vault, copies the same bundle to desktop and mobile configuration directories, and checks that non-target files retain their baseline hashes.
-
-## Privacy and repository hygiene
-
-Do not commit personal Vault content, absolute home-directory paths, usernames, local backups, generated bundles, or Obsidian workspace state. The repository's `.gitignore` excludes generated output and local backups. Replace `/path/to/...` placeholders with local paths only in shell commands; do not write those paths into tracked files.
 
 ## License
 
