@@ -16,6 +16,7 @@ import { EditProblemModal } from './modals/edit-problem-modal';
 import { AssociateProblemModal } from './modals/associate-problem-modal';
 import { EditGoalsModal } from './modals/edit-goals-modal';
 import { EditTaskModal } from './modals/edit-task-modal';
+import { ProjectActionsModal } from './modals/project-actions-modal';
 
 export const VIEW_TYPE_RESEARCH_WORKBENCH = 'research-workbench';
 
@@ -64,7 +65,7 @@ export class ResearchWorkbenchView extends ItemView {
       toggleFullText: (value) => { this.state.fullText = value; this.renderCurrent(); },
       openProjectNote: () => { this.state.panel = 'project-note'; void this.refresh(); },
       openProblem: (problem) => void this.openFile(problem.path),
-      createProject: () => void this.openProjectWizard(), createProblem: () => void this.createProblem(), createTask: () => void this.createTask(), openTask: (path) => void this.openFile(path), editTask: (path) => void this.editTask(path),
+      createProject: () => void this.openProjectWizard(), createProblem: () => void this.createProblem(), createTask: () => void this.createTask(), projectActions: (path) => void this.projectActions(path), openTask: (path) => void this.openFile(path), editTask: (path) => void this.editTask(path),
       associateProblem: () => void this.associateProblem(), recordIdea: () => void this.createPending(),
       openGoals: () => { this.state.panel = 'goals'; void this.refresh(); }, openRecords: () => { this.state.panel = 'records'; void this.refresh(); }, openInbox: () => { this.state.panel = 'inbox'; void this.refresh(); },
       archive: (path) => void this.archive(path), edit: (path) => void this.editProblem(path),
@@ -101,6 +102,14 @@ export class ResearchWorkbenchView extends ItemView {
   private async archive(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
     try { await archiveEntity(this.app, path, sha256(await this.app.vault.read(file))); await this.refresh(); } catch (error) { new Notice(String(error)); }
+  }
+  private async projectActions(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
+    new ProjectActionsModal(this.app, file.basename, {
+      open: () => void this.openFile(path),
+      archive: async () => { try { await archiveEntity(this.app, path, sha256(await this.app.vault.read(file))); await this.refresh(); } catch (error) { new Notice(String(error)); } },
+      trash: async () => { try { await this.app.vault.trash(file, false); await this.refresh(); } catch (error) { new Notice(String(error)); } },
+    }).open();
   }
   private async editProblem(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
