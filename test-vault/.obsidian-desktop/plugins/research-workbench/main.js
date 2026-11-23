@@ -7614,7 +7614,7 @@ var ResearchWorkbenchSettingTab = class extends import_obsidian10.PluginSettingT
   display() {
     const plugin = this.workbenchPlugin;
     this.containerEl.empty();
-    new import_obsidian10.Setting(this.containerEl).setName("Project Workbench").setHeading();
+    new import_obsidian10.Setting(this.containerEl).setName("Appearance").setHeading();
     new import_obsidian10.Setting(this.containerEl).setName("\u4FE1\u606F\u5BC6\u5EA6").addDropdown((dropdown) => dropdown.addOptions({ comfortable: "\u8212\u9002", standard: "\u6807\u51C6", compact: "\u7D27\u51D1" }).setValue(plugin.settings.density).onChange(async (value) => {
       plugin.settings.density = value;
       await plugin.saveSettings();
