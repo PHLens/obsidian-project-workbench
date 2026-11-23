@@ -1,4 +1,4 @@
-import { ItemView, Notice, TFile, WorkspaceLeaf, Modal } from 'obsidian';
+import { ItemView, Notice, TFile, WorkspaceLeaf, Modal, Menu } from 'obsidian';
 import { buildProjectIndex, buildProjectSnapshot, buildTimelineEvents } from '../model/project-snapshot';
 import type { ProjectSnapshot, VaultFile } from '../model/types';
 import { DEFAULT_WORKBENCH_STATE, type WorkbenchViewState } from '../model/view-state';
@@ -16,7 +16,6 @@ import { EditProblemModal } from './modals/edit-problem-modal';
 import { AssociateProblemModal } from './modals/associate-problem-modal';
 import { EditGoalsModal } from './modals/edit-goals-modal';
 import { EditTaskModal } from './modals/edit-task-modal';
-import { ProjectActionsModal } from './modals/project-actions-modal';
 
 export const VIEW_TYPE_RESEARCH_WORKBENCH = 'research-workbench';
 
@@ -65,7 +64,7 @@ export class ResearchWorkbenchView extends ItemView {
       toggleFullText: (value) => { this.state.fullText = value; this.renderCurrent(); },
       openProjectNote: () => { this.state.panel = 'project-note'; void this.refresh(); },
       openProblem: (problem) => void this.openFile(problem.path),
-      createProject: () => void this.openProjectWizard(), createProblem: () => void this.createProblem(), createTask: () => void this.createTask(), projectActions: (path) => void this.projectActions(path), openTask: (path) => void this.openFile(path), editTask: (path) => void this.editTask(path),
+      createProject: () => void this.openProjectWizard(), createProblem: () => void this.createProblem(), createTask: () => void this.createTask(), projectContextMenu: (path, event) => this.showProjectContextMenu(path, event), openTask: (path) => void this.openFile(path), editTask: (path) => void this.editTask(path),
       associateProblem: () => void this.associateProblem(), recordIdea: () => void this.createPending(),
       openGoals: () => { this.state.panel = 'goals'; void this.refresh(); }, openRecords: () => { this.state.panel = 'records'; void this.refresh(); }, openInbox: () => { this.state.panel = 'inbox'; void this.refresh(); },
       archive: (path) => void this.archive(path), edit: (path) => void this.editProblem(path),
@@ -103,13 +102,18 @@ export class ResearchWorkbenchView extends ItemView {
     const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
     try { await archiveEntity(this.app, path, sha256(await this.app.vault.read(file))); await this.refresh(); } catch (error) { new Notice(String(error)); }
   }
-  private async projectActions(path: string): Promise<void> {
+  private showProjectContextMenu(path: string, event: MouseEvent): void {
     const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
-    new ProjectActionsModal(this.app, file.basename, {
-      open: () => void this.openFile(path),
-      archive: async () => { try { await archiveEntity(this.app, path, sha256(await this.app.vault.read(file))); await this.refresh(); } catch (error) { new Notice(String(error)); } },
-      trash: async () => { try { await this.app.vault.trash(file, false); await this.refresh(); } catch (error) { new Notice(String(error)); } },
-    }).open();
+    const menu = new Menu();
+    menu.addItem((item) => item.setTitle('打开项目笔记').setIcon('file-text').onClick(() => void this.openFile(path)));
+    menu.addItem((item) => item.setTitle('归档项目').setIcon('archive').onClick(async () => { try { await archiveEntity(this.app, path, sha256(await this.app.vault.read(file))); await this.refresh(); } catch (error) { new Notice(String(error)); } }));
+    menu.addItem((item) => item.setTitle('删除项目').setIcon('trash-2').setWarning(true).onClick(() => void this.confirmDeleteProject(file)));
+    menu.showAtMouseEvent(event);
+  }
+  private async confirmDeleteProject(file: TFile): Promise<void> {
+    const confirmed = window.confirm(`确定删除项目“${file.basename}”吗？\n\n只删除项目文件，不删除关联的问题、任务或资料。`);
+    if (!confirmed) return;
+    try { await this.app.vault.delete(file); await this.refresh(); } catch (error) { new Notice(String(error)); }
   }
   private async editProblem(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path); if (!(file instanceof TFile)) return;
