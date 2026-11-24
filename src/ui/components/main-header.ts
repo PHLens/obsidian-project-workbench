@@ -1,3 +1,5 @@
+import { getInboxCounts } from '../../model/inbox';
+import { renderInboxNotification } from './inbox-notification';
 import { renderIcon } from './icon';
 import type { WorkbenchActions, WorkbenchRenderContext } from './workbench-shell';
 
@@ -10,8 +12,14 @@ export function renderMainHeader(container: HTMLElement, context: WorkbenchRende
   const search = header.createDiv({ cls: 'rw-search-wrap' });
   const input = search.createEl('input', { cls: 'rw-search', type: SEARCH_CONTROL_CONTRACT.inputType, placeholder: '搜索项目、研究问题与资料', value: context.state.query });
   input.setAttribute('role', SEARCH_CONTROL_CONTRACT.role);
-  input.oninput = () => actions.setQuery(input.value);
+  let composing = false;
+  input.addEventListener('compositionstart', () => { composing = true; input.dataset.composing = 'true'; });
+  input.addEventListener('compositionend', () => { composing = false; delete input.dataset.composing; actions.setQuery(input.value); });
+  input.oninput = (event) => { if (!composing && !(event as InputEvent).isComposing) actions.setQuery(input.value); };
   const searchIcon = search.createSpan({ cls: 'rw-search-icon' }); renderIcon(searchIcon, 'search');
-  const record = header.createEl('button', { cls: 'rw-button rw-record-button', text: '＋ 记录想法' }); record.onclick = actions.recordIdea;
+  const capture = header.createDiv({ cls: 'rw-record-actions' });
+  renderInboxNotification(capture, getInboxCounts(context.inbox ?? []).pending, actions.openPendingInbox);
+  capture.createEl('button', { cls: 'rw-button rw-primary', text: '＋ 新增资料' }).onclick = () => actions.recordIdea();
+  capture.createEl('button', { cls: 'rw-button', text: '引用笔记' }).onclick = () => actions.addExistingNote();
   return header;
 }

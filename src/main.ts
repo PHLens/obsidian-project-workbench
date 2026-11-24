@@ -14,6 +14,8 @@ export default class ResearchWorkbenchPlugin extends Plugin {
     this.addCommand({ id: 'create-problem', name: 'Create problem', callback: () => void this.withView((view) => view.createProblem()) });
     this.addCommand({ id: 'create-task', name: 'Create task', callback: () => void this.withView((view) => view.createTask()) });
     this.addCommand({ id: 'record-idea', name: 'Record idea', callback: () => void this.withView((view) => view.createPending()) });
+    this.addCommand({ id: 'open-inbox', name: 'Open inbox', callback: () => void this.withView((view) => view.openGlobalInbox()) });
+    this.addCommand({ id: 'reference-note', name: 'Add existing note to inbox', callback: () => void this.withView((view) => view.captureExistingNote()) });
   }
   async saveSettings(): Promise<void> { await this.saveData(this.settings); for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)) if (leaf.view instanceof ResearchWorkbenchView) leaf.view.setDataScope(this.settings); }
   private async withView(action: (view: ResearchWorkbenchView) => Promise<void> | void): Promise<void> { await this.activate(); const leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)[0]; if (leaf?.view instanceof ResearchWorkbenchView) await action(leaf.view); }

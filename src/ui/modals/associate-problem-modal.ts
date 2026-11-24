@@ -3,7 +3,7 @@ import { createModalField } from './form-fields';
 
 export class AssociateProblemModal extends Modal {
   constructor(app: App, private readonly problems: Array<{ path: string; title: string }>, private readonly submit: (path: string, focus: boolean) => Promise<void>) { super(app); }
-  onOpen(): void {
+  onOpen(): void { this.contentEl.addClass('rw-modal-form');
     this.titleEl.setText('关联已有研究问题');
     const select = createModalField(this.contentEl, { key: 'associateProblem', control: 'select', required: true }).input as HTMLSelectElement;
     for (const problem of this.problems) select.createEl('option', { value: problem.path, text: problem.title });

@@ -3,7 +3,7 @@ import { createModalField } from './form-fields';
 export interface ProblemModalResult { title: string; question: string; }
 export class ProblemModal extends Modal {
   constructor(app: App, private readonly submit: (result: ProblemModalResult) => Promise<void>) { super(app); }
-  onOpen(): void {
+  onOpen(): void { this.contentEl.addClass('rw-modal-form');
     this.titleEl.setText('New research problem');
     const title=createModalField(this.contentEl,{key:'problemTitle',control:'input',required:true}).input as HTMLInputElement;
     const question=createModalField(this.contentEl,{key:'problemQuestion',control:'textarea',required:true}).input as HTMLTextAreaElement;

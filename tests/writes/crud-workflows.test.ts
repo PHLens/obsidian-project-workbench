@@ -22,7 +22,7 @@ describe('protected CRUD workflows', () => {
     expect(archiveMarkdown(updated)).toContain('archived: true');
   });
   it('transitions pending input explicitly', () => {
-    expect(transitionPending('---\npending: true\nprocessing_status: pending\n---\n', 'linked')).toContain('processing_status: linked');
+    expect(transitionPending('---\npending: true\nprocessing_status: pending\n---\n', 'processed')).toContain('processing_status: processed');
   });
   it('patches problem properties without rewriting its body', () => {
     const raw = '---\nstatus: exploring\n---\n# Problem\n\n## Next Step\n- [ ] Test\n';

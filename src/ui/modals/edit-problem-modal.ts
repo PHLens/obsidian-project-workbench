@@ -5,7 +5,7 @@ export interface EditProblemResult { status: string; stage: string; researchRole
 
 export class EditProblemModal extends Modal {
   constructor(app: App, private readonly initial: EditProblemResult, private readonly submit: (result: EditProblemResult) => Promise<void>) { super(app); }
-  onOpen(): void {
+  onOpen(): void { this.contentEl.addClass('rw-modal-form');
     this.titleEl.setText('编辑研究问题');
     const status = createModalField(this.contentEl, { key: 'problemStatus', control: 'input', value: this.initial.status, required: true }).input as HTMLInputElement;
     const stage = createModalField(this.contentEl, { key: 'problemStage', control: 'input', value: this.initial.stage, required: true }).input as HTMLInputElement;

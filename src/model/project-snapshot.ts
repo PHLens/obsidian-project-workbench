@@ -3,6 +3,7 @@ import type { ChangeSummary, FilteredWorkbenchState, Note, PendingInputSummary, 
 export type { VaultFile } from './types';
 import { linkMatches, resolveProblemScope } from './types';
 import { isPathInDirectories, resolveDataScope } from './data-scope';
+import { buildInboxIndex, inboxForProject } from './inbox';
 
 function asString(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
 function asLinks(value: unknown): string[] { return Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : typeof value === 'string' ? [value] : []; }
@@ -34,11 +35,12 @@ function projectSummary(note: Note): ProjectSummary {
 
 export function buildProjectIndex(files: VaultFile[], options: { includeArchived?: boolean; projectDirectories?: string[] } = {}): ProjectSummary[] {
   const dataScope = options.projectDirectories ? resolveDataScope({ projectDirectories: options.projectDirectories }) : undefined;
-  return parseNotes(files).filter((note) => note.frontmatter.type === 'project' && (!dataScope || isPathInDirectories(note.path, dataScope.projectDirectories)) && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a,b)=>a.path.localeCompare(b.path));
+  const candidates = dataScope ? files.filter((file) => isPathInDirectories(file.path, dataScope.projectDirectories)) : files;
+  return parseNotes(candidates).filter((note) => note.frontmatter.type === 'project' && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a,b)=>a.path.localeCompare(b.path));
 }
 
 function problemSummary(note: Note, focus: Set<string>): ProblemSummary {
-  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, 'problem') };
+  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, 'problem') };
 }
 
 export function resolveProjectProblems(project: Note, notes: Note[]): { confirmed: ProblemSummary[]; empty: boolean } {
@@ -58,10 +60,7 @@ export function buildProjectSnapshot(files: VaultFile[], projectPath: string, op
   const projectSummary = projectSummaryFor(project);
   const problems: ProblemSummary[] = notes.filter((note) => scope.has(note.path) && (options.includeArchived || !isArchived(note))).map((note) => problemSummary(note, focus));
   const tasks: TaskSummary[] = notes.filter((note) => (!options.taskDirectories || isPathInDirectories(note.path, dataScope.taskDirectories)) && hasTag(note, 'task') && asLinks(note.frontmatter.projects).some((value) => linkMatches(value, project.path, notes) || [...scope].some((path) => linkMatches(value, path, notes))) && (options.includeArchived || !isArchived(note))).map((note) => ({ path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), priority: asString(note.frontmatter.priority), due: asString(note.frontmatter.due), projects: asLinks(note.frontmatter.projects), archived: isArchived(note), searchText: note.content, source: source(note.path, 'task') }));
-  const pendingInputs: PendingInputSummary[] = notes.filter((note) => (!options.inputDirectories || isPathInDirectories(note.path, dataScope.inputDirectories)) && isExplicitPendingInput(note)).filter((note) => {
-    const p = note.frontmatter.project;
-    return linkMatches(p, project.path, notes) || asLinks(note.frontmatter.problems).some((value) => [...scope].some((path) => linkMatches(value, path, notes)));
-  }).filter((note) => options.includeArchived || !isArchived(note)).map((note) => ({ path: note.path, title: titleFor(note), status: asString(note.frontmatter.processing_status) ?? 'pending', project: asString(note.frontmatter.project), archived: isArchived(note), searchText: note.content, source: source(note.path, 'input') }));
+  const pendingInputs = inboxForProject(buildInboxIndex(files, { inputDirectories: options.inputDirectories, includeArchived: options.includeArchived }), project.path, [...scope], files).filter((entry) => entry.status === 'pending');
   const scopedTitles = [titleFor(project), ...[...scope].map((path) => { const n = notes.find(x => x.path === path); return n ? titleFor(n) : ''; }).filter(Boolean)];
   const records: ChangeSummary[] = notes.filter((note) => (!options.recordDirectories || isPathInDirectories(note.path, dataScope.recordDirectories)) && /(?:^|\/)\d{4}-\d{2}-\d{2}\.md$/.test(note.path) && scopedTitles.some((title) => (note.body ?? '').includes(title))).map((note) => ({ path: note.path, title: firstHeading(note) ?? titleFor(note), date: note.path.match(/(\d{4}-\d{2}-\d{2})/)?.[1], source: source(note.path, 'record') }));
   return { schemaVersion: 1, project: projectSummary, problems, focusProblemPaths: [...focus], tasks, pendingInputs, records, generatedAt: 'snapshot' };
