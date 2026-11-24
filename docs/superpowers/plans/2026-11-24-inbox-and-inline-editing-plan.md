@@ -41,11 +41,11 @@
 - `inboxForProject(entries: InboxEntry[], projectPath: string, problemPaths: string[], files: Array<{ path: string }>): InboxEntry[]` derives reverse material lists.
 - `ScopedFileCache.load(files, read, forcePaths)` reuses unchanged content by path/mtime/size and removes files no longer present.
 
-- [ ] Write tests: title-only uncategorized capture data is indexed; legacy `project`/`projects` combine; processed and unknown values remain indexed; exact-path links beat duplicate basenames; project/problem filters select correct entries; absent associations do not exclude an entry globally. Cache tests assert unrelated notes are not read on a single-file change and deletion/scope changes evict cached notes.
-- [ ] Run `npm test -- tests/model/inbox.test.ts tests/ui/scoped-file-cache.test.ts`; expect the new behavior to fail before implementation.
-- [ ] Implement the interfaces and project projections. Keep existing `pendingInputs` consumers compatible while allowing the global index to exist independently.
-- [ ] Run the focused tests and all existing model tests; expect PASS.
-- [ ] Commit: `feat: index global inbox entries within configured scope`.
+- [x] Write tests: title-only uncategorized capture data is indexed; legacy `project`/`projects` combine; processed and unknown values remain indexed; exact-path links beat duplicate basenames; project/problem filters select correct entries; absent associations do not exclude an entry globally. Cache tests assert unrelated notes are not read on a single-file change and deletion/scope changes evict cached notes.
+- [x] Run `npm test -- tests/model/inbox.test.ts tests/ui/scoped-file-cache.test.ts`; expect the new behavior to fail before implementation.
+- [x] Implement the interfaces and project projections. Keep existing `pendingInputs` consumers compatible while allowing the global index to exist independently.
+- [x] Run the focused tests and all existing model tests; expect PASS.
+- [x] Commit: `feat: index global inbox entries within configured scope`.
 
 ## Task 2: Protected capture and association writes
 
