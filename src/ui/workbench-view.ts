@@ -23,10 +23,16 @@ import { createRefreshScheduler, type RefreshScheduler } from './refresh-schedul
 import { ScopedFileCache } from './scoped-file-cache';
 import { getUnassociatedProblemCandidates } from './problem-candidates';
 import { allDataDirectories, isPathInDirectories, resolveDataScope, type WorkbenchDataScope } from '../model/data-scope';
+import { attachColumnLayout, normalizeColumnPreferences, type ColumnLayoutController, type ColumnPreferences } from './column-layout';
+
+interface ColumnStorage { preferences?: Partial<ColumnPreferences>; save?: (value: ColumnPreferences) => void | Promise<void>; }
 
 export const VIEW_TYPE_RESEARCH_WORKBENCH = 'research-workbench';
 export class ResearchWorkbenchView extends ItemView {
   private dataScope: WorkbenchDataScope;
+  private columnPreferences: ColumnPreferences;
+  private columnController?: ColumnLayoutController;
+  private columnRoot?: HTMLElement;
   private snapshot: ProjectSnapshot | null = null;
   private cachedFiles: VaultFile[] | null = null;
   private cachedProjects: ProjectSummary[] = [];
@@ -47,7 +53,9 @@ export class ResearchWorkbenchView extends ItemView {
   private readonly workbenchLeaf: WorkspaceLeaf;
   private projectPath = '';
   private state: WorkbenchViewState = { ...DEFAULT_WORKBENCH_STATE, projectPath: this.projectPath };
-  constructor(leaf: WorkspaceLeaf, dataScope: Partial<WorkbenchDataScope> = {}) { super(leaf); this.workbenchLeaf = leaf; this.dataScope = resolveDataScope(dataScope); }
+  constructor(leaf: WorkspaceLeaf, dataScope: Partial<WorkbenchDataScope> = {}, private readonly columnStorage: ColumnStorage = {}) {
+    super(leaf); this.workbenchLeaf = leaf; this.dataScope = resolveDataScope(dataScope); this.columnPreferences = normalizeColumnPreferences(columnStorage.preferences);
+  }
   getViewType(): string { return VIEW_TYPE_RESEARCH_WORKBENCH; }
   getDisplayText(): string { return 'Project Workbench'; }
   getIcon(): string { return 'layout-dashboard'; }
@@ -89,6 +97,7 @@ export class ResearchWorkbenchView extends ItemView {
     this.disposed = true; this.lifecycleVersion++; this.refreshTask = null; this.refreshPending = false;
     this.opened = false;
     this.eventDisposers.splice(0).forEach((dispose) => dispose());
+    this.columnController?.dispose(); this.columnController = undefined; this.columnRoot = undefined;
     this.refreshScheduler?.dispose(); this.closePropertyEditor?.();
     if (this.queryRenderTimer !== undefined) clearTimeout(this.queryRenderTimer);
     this.queryRenderTimer = undefined;
@@ -97,6 +106,10 @@ export class ResearchWorkbenchView extends ItemView {
     const next = resolveDataScope(dataScope);
     if (JSON.stringify(next) === JSON.stringify(this.dataScope)) return;
     this.dataScope = next; void this.refresh();
+  }
+  setColumnPreferences(value: ColumnPreferences): void {
+    this.columnPreferences = normalizeColumnPreferences(value);
+    this.columnController?.update(this.columnPreferences);
   }
   private requireDirectory(key: keyof WorkbenchDataScope): string {
     const directory = this.dataScope[key][0];
@@ -197,7 +210,17 @@ export class ResearchWorkbenchView extends ItemView {
     let inboxProblemPaths: string[] = [];
     const association = this.state.inboxAssociation;
     if (association?.kind === 'project' && this.cachedFiles && this.cachedProjects.some((project) => project.path === association.path)) inboxProblemPaths = buildProjectSnapshot(this.cachedFiles, association.path, { includeArchived: true, ...this.dataScope }).problems.map((problem) => problem.path);
-    renderWorkbench(this.contentEl, { state: this.state, projects: this.cachedProjects, snapshot: this.snapshot, events: this.cachedEvents, inbox: this.inbox, files: this.cachedFiles ?? [], inboxProblemPaths, inputConfigured: this.dataScope.inputDirectories.length > 0 }, this.actions());
+    const active = this.contentEl.ownerDocument.activeElement;
+    const composing = active && this.contentEl.contains(active) && active.matches('input.rw-search[data-composing="true"]');
+    if (!composing) { this.columnController?.dispose(); this.columnController = undefined; this.columnRoot = undefined; }
+    const root = renderWorkbench(this.contentEl, { state: this.state, projects: this.cachedProjects, snapshot: this.snapshot, events: this.cachedEvents, inbox: this.inbox, files: this.cachedFiles ?? [], inboxProblemPaths, inputConfigured: this.dataScope.inputDirectories.length > 0 }, this.actions());
+    if (root !== this.columnRoot) {
+      this.columnRoot = root;
+      this.columnController = attachColumnLayout(root, this.columnPreferences, value => {
+        this.columnPreferences = value;
+        void Promise.resolve().then(() => this.columnStorage.save?.(value)).catch(error => new Notice('无法保存栏布局：' + String(error)));
+      });
+    }
   }
   private async openCapture(mode: 'new' | 'reference', context: CaptureContext = {}): Promise<void> {
     let directory: string; try { directory = this.requireDirectory('inputDirectories'); } catch (error) { new Notice(String(error)); return; }

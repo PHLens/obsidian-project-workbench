@@ -52,7 +52,11 @@ export function openPropertyEditor(anchor: HTMLElement, options: EditorOptions):
       }
     }
   };
-  const outside = (event: Event) => { if (!root.contains(event.target as Node)) close(); };
+  const outside = (event: Event) => {
+    const target = event.target as Element | null;
+    if (target?.closest?.('[data-column-toggle],[data-column-close],[data-column-resize]') && anchor.closest('.research-workbench')?.contains(target)) return;
+    if (!root.contains(event.target as Node)) close();
+  };
   const keydown = (event: KeyboardEvent) => {
     if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
     if (!root.contains(event.target as Node)) return;

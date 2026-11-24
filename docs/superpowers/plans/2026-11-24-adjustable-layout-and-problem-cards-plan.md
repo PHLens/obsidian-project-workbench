@@ -82,13 +82,13 @@
 - Shell renders header controls, collapse controls, and separators; unavailable right-column controls are omitted.
 - View owns and disposes the controller when a root is replaced or the view closes. An IME-preserved root retains its existing controller.
 
-- [ ] Write tests/ui/column-integration.test.ts against the real view: controls exist, layout changes retain the same card/search/editor nodes, no additional reads or snapshot refresh occur, and preferences survive a reload through a local storage adapter.
-- [ ] Cover two views sharing preferences and serial settings writes preserving directory values.
-- [ ] Cover panel changes with no right rail, narrow-to-wide restoration, and close/rerender while a drag is pending.
-- [ ] Run the integration tests and observe failures before wiring the shell and persistence.
-- [ ] Implement the view/plugin adapter, ordered saves, settings normalization, live controls, and lifecycle management. Replace the former right-rail dropdown with the header controls.
-- [ ] Run column, integration, existing refresh-performance, directory-settings, and composition tests plus type checking. Expect all passing.
-- [ ] Commit and ledger the result.
+- [x] Write tests/ui/column-integration.test.ts against the real view: controls exist, layout changes retain the same card/search/editor nodes, no additional reads or snapshot refresh occur, and preferences survive a reload through a local storage adapter.
+- [x] Cover two views sharing preferences and serial settings writes preserving directory values.
+- [x] Cover panel changes with no right rail, narrow-to-wide restoration, and close/rerender while a drag is pending.
+- [x] Run the integration tests and observe failures before wiring the shell and persistence.
+- [x] Implement the view/plugin adapter, ordered saves, settings normalization, live controls, and lifecycle management. Replace the former right-rail dropdown with the header controls.
+- [x] Run column, integration, existing refresh-performance, directory-settings, and composition tests plus type checking. Expect all passing.
+- [x] Commit and ledger the result.
 
 ### Task 4: Layered cards and source navigation
 

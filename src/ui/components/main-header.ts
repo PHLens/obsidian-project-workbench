@@ -21,5 +21,11 @@ export function renderMainHeader(container: HTMLElement, context: WorkbenchRende
   renderInboxNotification(capture, getInboxCounts(context.inbox ?? []).pending, actions.openPendingInbox);
   capture.createEl('button', { cls: 'rw-button rw-primary', text: '＋ 新增资料' }).onclick = () => actions.recordIdea();
   capture.createEl('button', { cls: 'rw-button', text: '引用笔记' }).onclick = () => actions.addExistingNote();
+  const columns = header.createDiv({ cls: 'rw-column-controls', attr: { role: 'group', 'aria-label': '工作台栏布局' } });
+  for (const [key, label] of [['left', '收起导航'], ['focus', context.state.panel === 'workspace' ? '只看问题' : '专注主区域'], ['right', '收起概览']] as const) {
+    if (key === 'right' && (context.state.panel !== 'workspace' || !context.snapshot)) continue;
+    const button = columns.createEl('button', { cls: 'rw-button', text: label, type: 'button' });
+    button.dataset.columnToggle = key;
+  }
   return header;
 }
