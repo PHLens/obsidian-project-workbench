@@ -64,12 +64,12 @@
 - Produce attachColumnLayout(root: HTMLElement, preferences: ColumnPreferences, commit: (value: ColumnPreferences) => void): { update(value: ColumnPreferences): void; dispose(): void }.
 - Controller consumes data-column-toggle, data-column-close, data-column-resize, and named sidebar/main/rail elements in the shell.
 
-- [ ] Write tests/ui/column-layout.test.ts with independent expected geometry for wide/constrained/hidden columns and invalid preferences.
-- [ ] Add actual DOM tests for independent collapse, focus restoration, keyboard resize/default reset, pointer-release persistence, cancellation/cleanup, and narrow drawer Escape/outside/focus behavior.
-- [ ] Run npm test -- tests/ui/column-layout.test.ts; confirm the missing behavior.
-- [ ] Implement constrained effective widths, native controls, animation-frame drag updates, local drawers, resize observation, and cleanup.
-- [ ] Run targeted tests and npm run typecheck. Expect passing tests with saved requested widths unchanged by window constraints.
-- [ ] Commit and ledger the result.
+- [x] Write tests/ui/column-layout.test.ts with independent expected geometry for wide/constrained/hidden columns and invalid preferences.
+- [x] Add actual DOM tests for independent collapse, focus restoration, keyboard resize/default reset, pointer-release persistence, cancellation/cleanup, and narrow drawer Escape/outside/focus behavior.
+- [x] Run npm test -- tests/ui/column-layout.test.ts; confirm the missing behavior.
+- [x] Implement constrained effective widths, native controls, animation-frame drag updates, local drawers, resize observation, and cleanup.
+- [x] Run targeted tests and npm run typecheck. Expect passing tests with saved requested widths unchanged by window constraints.
+- [x] Commit and ledger the result.
 
 ### Task 3: Settings and live view integration
 
