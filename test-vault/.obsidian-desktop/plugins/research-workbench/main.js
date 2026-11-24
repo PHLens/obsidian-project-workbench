@@ -6502,6 +6502,82 @@ function filterInbox(entries, filters, files) {
   return filtered.filter((entry) => (!filters.view || filters.view === "all" || (filters.view === "pending" ? entry.status === "pending" : PROCESSED_STATES.includes(entry.status))) && (!filters.kind || filters.kind === "all" || entry.kind === filters.kind) && (!query || [entry.title, entry.summary, entry.sourceValue, ...entry.projects, ...entry.problems].some((value) => value?.toLocaleLowerCase().includes(query))));
 }
 
+// src/model/next-steps.ts
+var previews = /* @__PURE__ */ new WeakMap();
+function previewFor(note) {
+  const cached = previews.get(note);
+  if (cached?.content === note.content && cached.body === note.body && cached.summary === note.frontmatter.summary) return cached;
+  const lines = sourceLines(note);
+  const preview = { content: note.content, body: note.body, summary: note.frontmatter.summary, overview: deriveOverview(note, lines), steps: parseSteps(lines) };
+  previews.set(note, preview);
+  return preview;
+}
+function readNextSteps(note) {
+  return previewFor(note).steps;
+}
+function problemOverview(note) {
+  return previewFor(note).overview;
+}
+function sourceLines(note) {
+  const body = note.body ?? note.content;
+  const offset = note.content.slice(0, note.content.length - body.length).split("\n").length - 1;
+  const lines = [];
+  let fence = "";
+  for (const [index, text] of body.split(/\r?\n/).entries()) {
+    const marker = text.match(/^[ \t]*(\x60{3,}|~{3,})(.*)$/);
+    if (fence) {
+      if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
+      continue;
+    }
+    if (marker) {
+      fence = marker[1];
+      continue;
+    }
+    const heading = text.match(/^ {0,3}(#{1,6})[ \t]+(.+)$/);
+    lines.push({ text, line: offset + index, heading: heading ? { level: heading[1].length, text: heading[2].replace(/[ \t]+#+[ \t]*$/, "").trim() } : void 0 });
+  }
+  return lines;
+}
+function parseSteps(lines) {
+  const start = lines.findIndex(({ heading }) => heading?.level === 2 && /^(?:Next Steps?|下一步)$/i.test(heading.text));
+  if (start < 0) return { items: [] };
+  const items = [];
+  let continuation = false;
+  for (const source2 of lines.slice(start + 1)) {
+    if (source2.heading && source2.heading.level <= 2) break;
+    const item = source2.text.match(/^([ \t]*)(?:[-+*]|\d+[.)])[ \t]+(?:\[([ xX])\][ \t]+)?(.+)$/);
+    if (item) {
+      items.push({ text: item[3].trim(), ...item[2] === void 0 ? {} : { completed: item[2].toLowerCase() === "x" }, depth: Math.floor(item[1].replace(/\t/g, "    ").length / 2), line: source2.line });
+      continuation = true;
+    } else if (continuation && source2.text.trim() && !source2.heading && items.length) {
+      items[items.length - 1].text += " " + source2.text.trim();
+    } else if (!source2.text.trim() || source2.heading) continuation = false;
+  }
+  return { items, heading: lines[start].heading.text, line: lines[start].line };
+}
+function deriveOverview(note, lines) {
+  if (typeof note.frontmatter.summary === "string" && note.frontmatter.summary.trim()) return note.frontmatter.summary.trim();
+  const start = lines.findIndex(({ heading }) => heading?.level === 2 && /^(?:Overview|概述|问题概述)$/i.test(heading.text));
+  const candidates = start >= 0 ? lines.slice(start + 1) : lines;
+  const paragraph = [];
+  for (const { text, heading } of candidates) {
+    if (heading) {
+      if (heading.level <= 2 && !(start < 0 && heading.level === 1 && !paragraph.length)) break;
+      continue;
+    }
+    if (!text.trim()) {
+      if (paragraph.length) break;
+      continue;
+    }
+    if (/^\s*(?:[-+*>]|\d+[.)])\s|^\s*---\s*$/.test(text)) {
+      if (paragraph.length) break;
+      continue;
+    }
+    paragraph.push(text.trim());
+  }
+  return paragraph.join(" ") || void 0;
+}
+
 // src/model/project-snapshot.ts
 function asString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
@@ -6519,14 +6595,6 @@ function hasTag(note, tag) {
 function isArchived(note) {
   return note.frontmatter.archived === true || note.frontmatter.archived === "true" || note.frontmatter.status === "archived";
 }
-function summaryText(note) {
-  return asString(note.frontmatter.summary) ?? problemNextSteps(note)[0] ?? goalText(note);
-}
-function problemNextSteps(note) {
-  const body = note.body ?? "";
-  const section = body.match(/^##\s+(?:Next Step|下一步)\s*\n([\s\S]*?)(?=^##\s|$)/m)?.[1] ?? "";
-  return [...section.matchAll(/^\s*-\s+\[[ xX]\]\s+(.+)$/gm)].map((m) => m[1].trim());
-}
 function goalText(note) {
   const body = note.body ?? "";
   const section = body.match(/^##\s+(?:Goal|Research Question|研究目标)\s*\n([\s\S]*?)(?=^##\s|$)/m)?.[1] ?? body;
@@ -6543,7 +6611,8 @@ function buildProjectIndex(files, options = {}) {
   return parseNotes(candidates).filter((note) => note.frontmatter.type === "project" && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a, b) => a.path.localeCompare(b.path));
 }
 function problemSummary(note, focus) {
-  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, "problem") };
+  const steps = readNextSteps(note);
+  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: steps.items.map((item) => item.text), nextStepItems: steps.items, nextStepHeading: steps.heading === void 0 ? void 0 : { text: steps.heading, line: steps.line }, summary: problemOverview(note), searchText: note.content, source: source(note.path, "problem") };
 }
 function buildProjectSnapshot(files, projectPath, options = { includeArchived: true }) {
   const dataScope = resolveDataScope(options);
@@ -6579,7 +6648,7 @@ function filterWorkbenchItems(snapshot, query, filters = {}) {
   const values = (selected, value) => !selected?.length || !!value && selected.includes(value);
   const includeArchived = filters.includeArchived ?? false;
   return {
-    problems: snapshot.problems.filter((p) => (includeArchived || !p.archived) && match(p.title, p.summary ?? p.nextSteps[0], p.searchText) && values(filters.status, p.status) && values(filters.stage, p.stage) && values(filters.researchRole, p.researchRole) && values(filters.sources, p.source.kind)),
+    problems: snapshot.problems.filter((p) => (includeArchived || !p.archived) && match(p.title, [p.summary ?? "", ...p.nextSteps].join("\n"), p.searchText) && values(filters.status, p.status) && values(filters.stage, p.stage) && values(filters.researchRole, p.researchRole) && values(filters.sources, p.source.kind)),
     tasks: snapshot.tasks.filter((t) => (includeArchived || !t.archived) && match(t.title, t.priority, t.searchText) && values(filters.status, t.status) && values(filters.sources, t.source.kind)),
     pendingInputs: snapshot.pendingInputs.filter((i) => (includeArchived || !i.archived) && match(i.title, i.status, i.searchText) && values(filters.status, i.status) && values(filters.sources, i.source.kind))
   };
@@ -6591,6 +6660,7 @@ var DEFAULT_WORKBENCH_STATE = {
   query: "",
   fullText: false,
   problemFilter: "all",
+  expandedNextSteps: [],
   status: [],
   stage: [],
   researchRole: [],
@@ -6735,6 +6805,12 @@ function renderMainHeader(container, context, actions) {
   renderInboxNotification(capture, getInboxCounts(context.inbox ?? []).pending, actions.openPendingInbox);
   capture.createEl("button", { cls: "rw-button rw-primary", text: "\uFF0B \u65B0\u589E\u8D44\u6599" }).onclick = () => actions.recordIdea();
   capture.createEl("button", { cls: "rw-button", text: "\u5F15\u7528\u7B14\u8BB0" }).onclick = () => actions.addExistingNote();
+  const columns = header.createDiv({ cls: "rw-column-controls", attr: { role: "group", "aria-label": "\u5DE5\u4F5C\u53F0\u680F\u5E03\u5C40" } });
+  for (const [key, label] of [["left", "\u6536\u8D77\u5BFC\u822A"], ["focus", context.state.panel === "workspace" ? "\u53EA\u770B\u95EE\u9898" : "\u4E13\u6CE8\u4E3B\u533A\u57DF"], ["right", "\u6536\u8D77\u6982\u89C8"]]) {
+    if (key === "right" && (context.state.panel !== "workspace" || !context.snapshot)) continue;
+    const button = columns.createEl("button", { cls: "rw-button", text: label, type: "button" });
+    button.dataset.columnToggle = key;
+  }
   return header;
 }
 
@@ -6754,54 +6830,87 @@ function renderPropertyButton(container, options) {
   return button;
 }
 
-// src/ui/components/problem-row.ts
-function renderProblemRow(container, problem, actions) {
-  const row = container.createDiv({ cls: `rw-problem-row ${problem.focus ? "is-focus" : ""} ${problem.archived ? "is-archived" : ""}` });
-  row.onclick = () => actions.openProblem(problem);
-  const icon = row.createSpan({ cls: "rw-problem-type-icon" });
-  renderIcon(icon, problem.focus ? "target" : "git-branch");
-  icon.setAttribute("aria-hidden", "true");
-  const body = row.createDiv({ cls: "rw-problem-main" });
+// src/ui/components/problem-card.ts
+var nextCardId = 0;
+function renderProblemCard(container, problem, actions, expanded = false) {
+  const id = "rw-problem-card-" + ++nextCardId;
+  const card = container.createDiv({ cls: "rw-problem-row rw-problem-card" + (problem.focus ? " is-focus" : "") + (problem.archived ? " is-archived" : ""), attr: { role: "article", "aria-labelledby": id } });
+  const body = card.createDiv({ cls: "rw-problem-main" });
+  if (problem.focus) body.createDiv({ cls: "rw-problem-focus-label", text: "\u672C\u9636\u6BB5\u5173\u6CE8" });
   const identity = body.createDiv({ cls: "rw-problem-identity" });
-  identity.createEl("strong", { text: problem.title, attr: { title: problem.title } });
+  const heading = identity.createEl("strong");
+  const title = heading.createEl("button", { cls: "rw-problem-title", text: problem.title, type: "button", attr: { id } });
+  title.onclick = () => actions.openProblem(problem);
   renderPropertyButton(identity, { path: problem.path, field: "status", label: "\u95EE\u9898\u72B6\u6001", value: problem.status ?? "", className: "rw-status", onEdit: (anchor) => actions.editProperty(problem.path, "problem", "status", anchor) });
-  body.createEl("p", { cls: "rw-problem-summary", text: problem.summary ?? problem.nextSteps[0] ?? "\u7406\u89E3\u5F85\u8865\u5145" });
+  body.createEl("p", { cls: "rw-problem-summary" + (problem.summary ? "" : " rw-muted"), text: problem.summary ?? "\u6982\u8FF0\u5F85\u8865\u5145" });
   const meta = body.createDiv({ cls: "rw-problem-meta" });
-  meta.createSpan({ cls: "rw-type-marker", text: `\u7C7B\u578B\uFF1A${problem.source.kind}` });
-  if (problem.focus) {
-    const focus = meta.createSpan({ cls: "rw-focus-tag" });
-    renderIcon(focus, "flag");
-    focus.createSpan({ text: "\u672C\u9636\u6BB5\u5173\u6CE8" });
-  }
   for (const [field, label, value] of [["stage", "\u9636\u6BB5", problem.stage ?? ""], ["research_role", "\u89D2\u8272", problem.researchRole ?? ""], ["tags", "\u6807\u7B7E", problem.tags ?? []]]) {
     const group = meta.createDiv({ cls: "rw-property-group" });
     group.createEl("small", { cls: "rw-muted", text: label });
     renderPropertyButton(group, { path: problem.path, field, label, value, onEdit: (anchor) => actions.editProperty(problem.path, "problem", field, anchor) });
   }
-  const material = body.createDiv({ cls: "rw-problem-material-actions" });
-  const add = material.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u6DFB\u52A0\u8D44\u6599" });
+  const steps = problem.nextStepItems ?? problem.nextSteps.map((text) => ({ text, depth: 0, line: 0, completed: void 0 }));
+  const next = body.createDiv({ cls: "rw-next-steps" });
+  const nextHead = next.createDiv({ cls: "rw-next-steps-head" });
+  nextHead.createEl("strong", { text: "Next Step" });
+  const checklist = steps.length > 0 && steps.every((item) => item.completed !== void 0);
+  nextHead.createSpan({ cls: "rw-muted", text: checklist ? steps.filter((item) => !item.completed).length + " \u9879\u5F85\u529E \xB7 \u5171 " + steps.length + " \u9879" : "\u5171 " + steps.length + " \u9879" });
+  const source2 = nextHead.createEl("button", { cls: "rw-link-button", text: "\u539F\u6587", type: "button", attr: { "aria-label": "\u6253\u5F00 Next Step \u539F\u6587" } });
+  source2.dataset.action = "open-next-steps";
+  source2.onclick = () => actions.openNextSteps(problem);
+  if (!steps.length) next.createEl("p", { cls: "rw-next-steps-empty rw-muted", text: "\u5C1A\u672A\u8BB0\u5F55\u4E0B\u4E00\u6B65" });
+  else {
+    const list = next.createEl("ul", { cls: "rw-next-steps-list", attr: { id: id + "-steps" } });
+    steps.forEach((item, index) => {
+      const li = list.createEl("li", { cls: "rw-next-step" + (item.completed ? " is-completed" : "") });
+      li.hidden = index >= 3 && !expanded;
+      li.style.paddingInlineStart = Math.min(4, item.depth) * 12 + "px";
+      if (item.completed === void 0) li.createSpan({ cls: "rw-next-step-bullet", attr: { "aria-hidden": "true" } });
+      else {
+        const checkbox = li.createEl("input", { cls: "rw-next-step-checkbox", type: "checkbox", attr: { "aria-label": item.completed ? "\u5DF2\u5B8C\u6210" : "\u672A\u5B8C\u6210", title: "\u5728\u539F\u6587\u4E2D\u7F16\u8F91\u5B8C\u6210\u72B6\u6001" } });
+        checkbox.checked = item.completed;
+        checkbox.disabled = true;
+      }
+      li.createSpan({ cls: "rw-next-step-text", text: item.text });
+    });
+    if (steps.length > 3) {
+      const toggle = next.createEl("button", { cls: "rw-next-steps-toggle rw-link-button", type: "button", attr: { "aria-controls": list.id } });
+      let open = expanded;
+      const update = () => {
+        toggle.textContent = open ? "\u6536\u8D77\u6E05\u5355" : "\u5C55\u5F00\u5168\u90E8 " + steps.length + " \u9879";
+        toggle.setAttribute("aria-expanded", String(open));
+      };
+      update();
+      toggle.dataset.action = "toggle-next-steps";
+      toggle.onclick = () => {
+        open = !open;
+        list.querySelectorAll(".rw-next-step").forEach((li, index) => {
+          li.hidden = index >= 3 && !open;
+        });
+        update();
+        actions.setNextStepsExpanded(problem.path, open);
+      };
+    }
+  }
+  const footer = card.createDiv({ cls: "rw-problem-footer" });
+  footer.createSpan({ cls: "rw-problem-last", text: problem.archived ? "\u5DF2\u5F52\u6863" : problem.lastUpdated ?? "\u5F85\u9996\u6B21\u6574\u7406" });
+  const material = footer.createDiv({ cls: "rw-problem-material-actions" });
+  const add = material.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u6DFB\u52A0\u8D44\u6599", type: "button" });
   add.dataset.action = "add-material";
-  add.onclick = (event) => {
-    event.stopPropagation();
-    actions.recordIdea({ problemPath: problem.path });
-  };
-  const show = material.createEl("button", { cls: "rw-link-button", text: "\u67E5\u770B\u8D44\u6599" });
-  show.onclick = (event) => {
-    event.stopPropagation();
-    actions.viewMaterial("problem", problem.path);
-  };
-  const last = row.createDiv({ cls: "rw-problem-last" });
-  last.createEl("span", { text: problem.archived ? "\u5DF2\u5F52\u6863" : problem.lastUpdated ?? "\u5F85\u9996\u6B21\u6574\u7406" });
-  last.createSpan({ cls: "rw-row-arrow", text: "\u203A" });
-  const menu = row.createDiv({ cls: "rw-row-menu" });
+  add.onclick = () => actions.recordIdea({ problemPath: problem.path });
+  const show = material.createEl("button", { cls: "rw-link-button", text: "\u67E5\u770B\u8D44\u6599", type: "button" });
+  show.onclick = () => actions.viewMaterial("problem", problem.path);
+  const secondary = footer.createEl("details", { cls: "rw-card-menu" });
+  secondary.createEl("summary", { text: "\u66F4\u591A" });
+  const menu = secondary.createDiv({ cls: "rw-row-menu" });
   for (const [label, action] of [["\u7F16\u8F91", () => actions.edit(problem.path)], [problem.focus ? "\u53D6\u6D88\u7126\u70B9" : "\u8BBE\u4E3A\u7126\u70B9", () => actions.toggleFocus(problem)], ["\u5F52\u6863", () => actions.archive(problem.path)]]) {
-    const button = menu.createEl("button", { text: label, attr: { "aria-label": label } });
-    button.onclick = (event) => {
-      event.stopPropagation();
+    const button = menu.createEl("button", { text: label, type: "button", attr: { "aria-label": label } });
+    button.onclick = () => {
+      secondary.open = false;
       action();
     };
   }
-  return row;
+  return card;
 }
 
 // src/ui/components/problem-table.ts
@@ -6811,16 +6920,12 @@ function getProblemDisplayOrder(problems, filter) {
 }
 function renderProblemTable(container, snapshot, state, actions) {
   const table = container.createDiv({ cls: "rw-problem-table" });
-  const head = table.createDiv({ cls: "rw-problem-table-head" });
-  head.createSpan({ cls: "rw-table-icon-spacer", attr: { "aria-hidden": "true" } });
-  head.createSpan({ text: "\u7814\u7A76\u95EE\u9898" });
-  head.createSpan({ text: "\u6700\u8FD1\u6574\u7406" });
   const problems = getProblemDisplayOrder(snapshot.problems, state.problemFilter);
   if (!problems.length) {
     table.createDiv({ cls: "rw-table-empty", text: "\u5F53\u524D\u7B5B\u9009\u4E0B\u6CA1\u6709\u7814\u7A76\u95EE\u9898" });
     return table;
   }
-  for (const problem of problems) renderProblemRow(table, problem, actions);
+  for (const problem of problems) renderProblemCard(table, problem, actions, state.expandedNextSteps.includes(problem.path));
   return table;
 }
 
@@ -7042,7 +7147,12 @@ function renderWorkbenchContents(container, context, actions) {
   root.dataset.panel = context.state.panel;
   renderMainHeader(root, context, actions);
   const layout = root.createDiv({ cls: `rw-layout ${context.state.panel === "workspace" && context.snapshot ? "" : "rw-layout-two-column"}` });
-  renderProjectSidebar(layout, context.projects, context.state, actions, getInboxCounts(context.inbox ?? []).pending);
+  const sidebar = renderProjectSidebar(layout, context.projects, context.state, actions, getInboxCounts(context.inbox ?? []).pending);
+  const closeSidebar = sidebar.createEl("button", { cls: "rw-column-close", text: "\u6536\u8D77\u5BFC\u822A", type: "button" });
+  closeSidebar.dataset.columnClose = "left";
+  sidebar.prepend(closeSidebar);
+  const leftGrip = layout.createEl("button", { cls: "rw-column-separator", type: "button" });
+  leftGrip.dataset.columnResize = "left";
   const main = layout.createDiv({ cls: "rw-main-column" });
   const snapshot = context.snapshot;
   if (context.state.panel === "inbox") {
@@ -7130,7 +7240,11 @@ function renderWorkbenchContents(container, context, actions) {
   const filtered = filterWorkbenchItems(snapshot, context.state.query, { fullText: context.state.fullText, includeArchived: context.state.includeArchived, status: context.state.status, stage: context.state.stage, researchRole: context.state.researchRole, sources: context.state.sources });
   if (!filtered.problems.length) renderEmptyState(problemArea, context.state.query ? "search" : "problem", actions);
   else renderProblemTable(problemArea, { ...snapshot, problems: filtered.problems, tasks: filtered.tasks, pendingInputs: filtered.pendingInputs }, context.state, actions);
+  const rightGrip = layout.createEl("button", { cls: "rw-column-separator", type: "button" });
+  rightGrip.dataset.columnResize = "right";
   const rail = layout.createDiv({ cls: "rw-right-rail" });
+  const closeRail = rail.createEl("button", { cls: "rw-column-close", text: "\u6536\u8D77\u6982\u89C8", type: "button" });
+  closeRail.dataset.columnClose = "right";
   renderFocusPanel(rail, snapshot, actions);
   renderTimeline(rail, context.events, actions);
   renderPendingInbox(rail, snapshot.pendingInputs, actions);
@@ -7975,6 +8089,8 @@ function openPropertyEditor(anchor, options) {
     }
   };
   const outside = (event) => {
+    const target = event.target;
+    if (target?.closest?.("[data-column-toggle],[data-column-close],[data-column-resize]") && anchor.closest(".research-workbench")?.contains(target)) return;
     if (!root.contains(event.target)) close();
   };
   const keydown = (event) => {
@@ -8095,12 +8211,284 @@ function getUnassociatedProblemCandidates(files, current, directories) {
   return files.filter((file) => file.path.endsWith(".md") && isPathInDirectories(file.path, directories) && !current.has(file.path)).map((file) => ({ path: file.path, title: file.path.split("/").pop()?.replace(/\.md$/, "") ?? file.path }));
 }
 
+// src/ui/column-layout.ts
+var limits = { left: { min: 150, max: 360, initial: 220 }, right: { min: 190, max: 480, initial: 300 } };
+function normalizeColumnPreferences(value) {
+  const input = value && typeof value === "object" ? value : {};
+  const width = (side) => {
+    const value2 = input[side + "Width"];
+    return typeof value2 === "number" && Number.isFinite(value2) ? Math.max(limits[side].min, Math.min(limits[side].max, value2)) : limits[side].initial;
+  };
+  return {
+    leftWidth: width("left"),
+    rightWidth: width("right"),
+    leftCollapsed: input.leftCollapsed === true,
+    rightCollapsed: input.rightCollapsed === true,
+    focusMode: input.focusMode === true,
+    ...input.preferredSide === "left" || input.preferredSide === "right" ? { preferredSide: input.preferredSide } : {}
+  };
+}
+function fitColumns(width, preferences, hasRight) {
+  if (width < 840) return { left: 0, right: 0, narrow: true };
+  let left = preferences.leftCollapsed || preferences.focusMode ? 0 : preferences.leftWidth;
+  let right = !hasRight || preferences.rightCollapsed || preferences.focusMode ? 0 : preferences.rightWidth;
+  const budget = width - 360 - (left ? 8 : 0) - (right ? 8 : 0);
+  if (left + right > budget) {
+    const leftMin = left ? limits.left.min : 0, rightMin = right ? limits.right.min : 0;
+    if (preferences.preferredSide === "left" && left) {
+      left = Math.min(left, budget - rightMin);
+      right = Math.min(right, budget - left);
+    } else if (preferences.preferredSide === "right" && right) {
+      right = Math.min(right, budget - leftMin);
+      left = Math.min(left, budget - right);
+    } else {
+      const scale = Math.max(0, (budget - leftMin - rightMin) / Math.max(1, left + right - leftMin - rightMin));
+      left = leftMin + (left ? left - leftMin : 0) * scale;
+      right = rightMin + (right ? right - rightMin : 0) * scale;
+    }
+  }
+  return { left, right, narrow: false };
+}
+function attachColumnLayout(root, initial, commit) {
+  const win = root.ownerDocument.defaultView;
+  const sidebar = root.querySelector(".rw-sidebar");
+  const main = root.querySelector(".rw-main-column");
+  const rail = root.querySelector(".rw-right-rail");
+  const layout = root.querySelector(".rw-layout");
+  const panels = { left: sidebar, right: rail };
+  const toggles = { left: root.querySelector('[data-column-toggle="left"]'), right: root.querySelector('[data-column-toggle="right"]') };
+  const focusButton = root.querySelector('[data-column-toggle="focus"]');
+  const backdrop = root.ownerDocument.createElement("div");
+  backdrop.className = "rw-column-backdrop";
+  backdrop.hidden = true;
+  layout.append(backdrop);
+  let preferences = normalizeColumnPreferences(initial), disposed = false, drawer = null;
+  let frame;
+  let drag;
+  const off = [];
+  const listen = (el, type, callback) => {
+    el.addEventListener(type, callback);
+    off.push(() => el.removeEventListener(type, callback));
+  };
+  const measured = () => root.getBoundingClientRect().width;
+  const fitted = () => fitColumns(measured(), preferences, !!rail);
+  function closeDrawer(restore = true) {
+    const previous = drawer;
+    drawer = null;
+    apply();
+    if (restore && previous) toggles[previous]?.focus({ preventScroll: true });
+  }
+  function apply() {
+    if (disposed) return;
+    const geometry = fitted();
+    if (!geometry.narrow) drawer = null;
+    root.classList.toggle("rw-columns-narrow", geometry.narrow);
+    root.classList.toggle("rw-has-right-column", !!rail);
+    root.classList.toggle("rw-drawer-open", geometry.narrow && drawer !== null);
+    root.style.setProperty("--rw-left-width", geometry.left + "px");
+    root.style.setProperty("--rw-right-width", geometry.right + "px");
+    root.style.setProperty("--rw-left-grip", geometry.left ? "8px" : "0px");
+    root.style.setProperty("--rw-right-grip", geometry.right ? "8px" : "0px");
+    root.style.setProperty("--rw-drawer-height", Math.max(120, win.innerHeight - Math.max(0, layout.getBoundingClientRect().top) - 12) + "px");
+    for (const side of ["left", "right"]) {
+      const panel = panels[side], visible = geometry.narrow ? drawer === side : geometry[side] > 0;
+      if (panel) {
+        panel.hidden = !visible;
+        if (geometry.narrow && visible) {
+          panel.setAttribute("role", "dialog");
+          panel.setAttribute("aria-modal", "true");
+          panel.setAttribute("aria-label", side === "left" ? "\u9879\u76EE\u5BFC\u822A" : "\u9879\u76EE\u6982\u89C8");
+        } else {
+          panel.removeAttribute("role");
+          panel.removeAttribute("aria-modal");
+        }
+      }
+      const toggle2 = toggles[side];
+      if (toggle2) {
+        toggle2.hidden = !panel;
+        toggle2.textContent = (visible ? "\u6536\u8D77" : "\u663E\u793A") + (side === "left" ? "\u5BFC\u822A" : "\u6982\u89C8");
+        toggle2.setAttribute("aria-expanded", String(visible));
+      }
+      const handle = root.querySelector('[data-column-resize="' + side + '"]');
+      if (handle) {
+        handle.hidden = geometry.narrow || !geometry[side];
+        handle.setAttribute("role", "separator");
+        handle.setAttribute("aria-orientation", "vertical");
+        handle.setAttribute("aria-label", side === "left" ? "\u8C03\u6574\u5BFC\u822A\u680F\u5BBD\u5EA6" : "\u8C03\u6574\u6982\u89C8\u680F\u5BBD\u5EA6");
+        const other = side === "left" ? "right" : "left";
+        const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - (geometry[other] ? limits[other].min : 0));
+        handle.setAttribute("aria-valuemin", String(limits[side].min));
+        handle.setAttribute("aria-valuemax", String(Math.max(limits[side].min, Math.floor(maximum))));
+        handle.setAttribute("aria-valuenow", String(Math.round(geometry[side])));
+      }
+    }
+    backdrop.hidden = !geometry.narrow || !drawer;
+    main.inert = !backdrop.hidden;
+    focusButton?.setAttribute("aria-pressed", String(preferences.focusMode));
+  }
+  const save = () => {
+    if (!disposed) commit({ ...preferences });
+  };
+  function toggle(side) {
+    if (!panels[side]) return;
+    if (fitted().narrow) {
+      if (drawer === side) closeDrawer();
+      else {
+        drawer = side;
+        apply();
+        panels[side]?.querySelector("button,a,input,select,textarea")?.focus({ preventScroll: true });
+      }
+    } else {
+      if (preferences.focusMode) preferences = { ...preferences, focusMode: false, leftCollapsed: side !== "left", rightCollapsed: side !== "right" };
+      else preferences = { ...preferences, [side + "Collapsed"]: !preferences[side + "Collapsed"] };
+      apply();
+      save();
+    }
+  }
+  function resizeBase() {
+    return { ...preferences };
+  }
+  function setWidth(side, value, base) {
+    const geometry = fitColumns(measured(), base, !!rail), other = side === "left" ? "right" : "left";
+    const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - (geometry[other] ? limits[other].min : 0));
+    preferences = { ...base, [side + "Width"]: Math.max(limits[side].min, Math.min(maximum, value)), preferredSide: side };
+    apply();
+  }
+  function flushDrag() {
+    if (frame !== void 0) {
+      win.cancelAnimationFrame(frame);
+      frame = void 0;
+    }
+    if (!drag || disposed) return;
+    if (drag.lastX === drag.startX) {
+      preferences = { ...drag.base };
+      apply();
+      drag.changed = false;
+      return;
+    }
+    setWidth(drag.side, drag.startWidth + (drag.lastX - drag.startX) * (drag.side === "left" ? 1 : -1), drag.base);
+    drag.changed = JSON.stringify(preferences) !== JSON.stringify(drag.base);
+  }
+  function endDrag(persist) {
+    if (!drag) return;
+    if (persist) flushDrag();
+    else if (frame !== void 0) {
+      win.cancelAnimationFrame(frame);
+      frame = void 0;
+    }
+    const ended = drag;
+    drag = void 0;
+    if (ended.target.hasPointerCapture?.(ended.pointer)) ended.target.releasePointerCapture(ended.pointer);
+    root.classList.remove("rw-resizing-columns");
+    if (persist && ended.changed) save();
+  }
+  toggles.left && listen(toggles.left, "click", () => toggle("left"));
+  toggles.right && listen(toggles.right, "click", () => toggle("right"));
+  focusButton && listen(focusButton, "click", () => {
+    preferences = { ...preferences, focusMode: !preferences.focusMode };
+    drawer = null;
+    apply();
+    save();
+  });
+  root.querySelectorAll("[data-column-close]").forEach((button) => listen(button, "click", () => toggle(button.dataset.columnClose)));
+  for (const side of ["left", "right"]) {
+    const handle = root.querySelector('[data-column-resize="' + side + '"]');
+    if (!handle) continue;
+    listen(handle, "pointerdown", (event) => {
+      if (event.button !== 0 || fitted().narrow || disposed) return;
+      endDrag(false);
+      drag = { side, pointer: event.pointerId, startX: event.clientX, lastX: event.clientX, startWidth: fitted()[side], base: resizeBase(), target: handle, changed: false };
+      handle.setPointerCapture?.(event.pointerId);
+      root.classList.add("rw-resizing-columns");
+      event.preventDefault();
+    });
+    listen(handle, "pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.pointer) return;
+      drag.lastX = event.clientX;
+      if (frame === void 0) frame = win.requestAnimationFrame(() => {
+        frame = void 0;
+        flushDrag();
+      });
+    });
+    listen(handle, "pointerup", () => endDrag(true));
+    listen(handle, "pointercancel", () => endDrag(true));
+    listen(handle, "lostpointercapture", () => endDrag(true));
+    listen(handle, "dblclick", () => {
+      setWidth(side, limits[side].initial, resizeBase());
+      save();
+    });
+    listen(handle, "keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
+      event.preventDefault();
+      const base = resizeBase();
+      setWidth(side, event.key === "Home" ? limits[side].initial : fitted()[side] + (event.key === "ArrowRight" ? 16 : -16) * (side === "left" ? 1 : -1), base);
+      save();
+    });
+  }
+  listen(root, "pointerdown", (event) => {
+    if (drawer && event.target instanceof win.Node && !panels[drawer]?.contains(event.target) && !toggles[drawer]?.contains(event.target)) closeDrawer();
+  });
+  listen(root, "keydown", (event) => {
+    if (!drawer) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDrawer();
+    } else if (event.key === "Tab") {
+      const controls = Array.from(panels[drawer].querySelectorAll("button:not([disabled]),a[href],input:not([disabled]),select,textarea"));
+      if (!controls.length) return;
+      const first = controls[0], last = controls[controls.length - 1], active = root.ownerDocument.activeElement;
+      if (event.shiftKey && (active === first || !panels[drawer].contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panels[drawer].contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  });
+  let previousWidth = measured();
+  const observer = typeof win.ResizeObserver === "function" ? new win.ResizeObserver(() => {
+    const width = measured();
+    if (width !== previousWidth) {
+      previousWidth = width;
+      endDrag(false);
+    }
+    apply();
+  }) : void 0;
+  listen(win, "resize", () => {
+    endDrag(false);
+    apply();
+  });
+  observer?.observe(root);
+  apply();
+  return {
+    update(value) {
+      endDrag(false);
+      preferences = normalizeColumnPreferences(value);
+      apply();
+    },
+    dispose() {
+      endDrag(false);
+      disposed = true;
+      off.splice(0).forEach((dispose) => dispose());
+      observer?.disconnect();
+      main.inert = false;
+      backdrop.remove();
+    }
+  };
+}
+
 // src/ui/workbench-view.ts
 var VIEW_TYPE_RESEARCH_WORKBENCH = "research-workbench";
 var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
-  constructor(leaf, dataScope = {}) {
+  constructor(leaf, dataScope = {}, columnStorage = {}) {
     super(leaf);
+    this.columnStorage = columnStorage;
     __publicField(this, "dataScope");
+    __publicField(this, "columnPreferences");
+    __publicField(this, "columnController");
+    __publicField(this, "columnRoot");
     __publicField(this, "snapshot", null);
     __publicField(this, "cachedFiles", null);
     __publicField(this, "cachedProjects", []);
@@ -8123,6 +8511,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     __publicField(this, "state", { ...DEFAULT_WORKBENCH_STATE, projectPath: this.projectPath });
     this.workbenchLeaf = leaf;
     this.dataScope = resolveDataScope(dataScope);
+    this.columnPreferences = normalizeColumnPreferences(columnStorage.preferences);
   }
   getViewType() {
     return VIEW_TYPE_RESEARCH_WORKBENCH;
@@ -8193,6 +8582,9 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     this.refreshPending = false;
     this.opened = false;
     this.eventDisposers.splice(0).forEach((dispose) => dispose());
+    this.columnController?.dispose();
+    this.columnController = void 0;
+    this.columnRoot = void 0;
     this.refreshScheduler?.dispose();
     this.closePropertyEditor?.();
     if (this.queryRenderTimer !== void 0) clearTimeout(this.queryRenderTimer);
@@ -8203,6 +8595,10 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     if (JSON.stringify(next) === JSON.stringify(this.dataScope)) return;
     this.dataScope = next;
     void this.refresh();
+  }
+  setColumnPreferences(value) {
+    this.columnPreferences = normalizeColumnPreferences(value);
+    this.columnController?.update(this.columnPreferences);
   }
   requireDirectory(key) {
     const directory = this.dataScope[key][0];
@@ -8269,11 +8665,16 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
       this.cachedEvents = [];
       this.projectPath = "";
       this.state.projectPath = "";
+      this.state.expandedNextSteps = [];
       return;
     }
-    if (!this.cachedProjects.some((project) => project.path === this.projectPath)) this.projectPath = this.cachedProjects[0].path;
+    if (!this.cachedProjects.some((project) => project.path === this.projectPath)) {
+      this.projectPath = this.cachedProjects[0].path;
+      this.state.expandedNextSteps = [];
+    }
     this.state.projectPath = this.projectPath;
     this.snapshot = buildProjectSnapshot(this.cachedFiles, this.projectPath, { includeArchived: this.state.includeArchived, ...this.dataScope });
+    this.state.expandedNextSteps = this.state.expandedNextSteps.filter((path) => this.snapshot.problems.some((problem) => problem.path === path));
     this.cachedEvents = buildTimelineEvents(this.cachedFiles, this.snapshot, { recordDirectories: this.dataScope.recordDirectories });
   }
   captureContext(context) {
@@ -8296,10 +8697,17 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
   actions() {
     return {
       selectProject: (path) => {
+        if (path !== this.projectPath) this.state.expandedNextSteps = [];
         this.projectPath = path;
         this.state.projectPath = path;
         this.rebuildCachedSnapshot();
         this.renderCurrent();
+      },
+      setNextStepsExpanded: (path, expanded) => {
+        this.state.expandedNextSteps = expanded ? [.../* @__PURE__ */ new Set([...this.state.expandedNextSteps, path])] : this.state.expandedNextSteps.filter((value) => value !== path);
+      },
+      openNextSteps: (problem) => {
+        void this.openNextSteps(problem.path).catch((error) => new import_obsidian10.Notice(String(error)));
       },
       selectPanel: (panel) => {
         if (panel === "inbox") {
@@ -8405,7 +8813,21 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     let inboxProblemPaths = [];
     const association = this.state.inboxAssociation;
     if (association?.kind === "project" && this.cachedFiles && this.cachedProjects.some((project) => project.path === association.path)) inboxProblemPaths = buildProjectSnapshot(this.cachedFiles, association.path, { includeArchived: true, ...this.dataScope }).problems.map((problem) => problem.path);
-    renderWorkbench(this.contentEl, { state: this.state, projects: this.cachedProjects, snapshot: this.snapshot, events: this.cachedEvents, inbox: this.inbox, files: this.cachedFiles ?? [], inboxProblemPaths, inputConfigured: this.dataScope.inputDirectories.length > 0 }, this.actions());
+    const active = this.contentEl.ownerDocument.activeElement;
+    const composing = active && this.contentEl.contains(active) && active.matches('input.rw-search[data-composing="true"]');
+    if (!composing) {
+      this.columnController?.dispose();
+      this.columnController = void 0;
+      this.columnRoot = void 0;
+    }
+    const root = renderWorkbench(this.contentEl, { state: this.state, projects: this.cachedProjects, snapshot: this.snapshot, events: this.cachedEvents, inbox: this.inbox, files: this.cachedFiles ?? [], inboxProblemPaths, inputConfigured: this.dataScope.inputDirectories.length > 0 }, this.actions());
+    if (root !== this.columnRoot) {
+      this.columnRoot = root;
+      this.columnController = attachColumnLayout(root, this.columnPreferences, (value) => {
+        this.columnPreferences = value;
+        void Promise.resolve().then(() => this.columnStorage.save?.(value)).catch((error) => new import_obsidian10.Notice("\u65E0\u6CD5\u4FDD\u5B58\u680F\u5E03\u5C40\uFF1A" + String(error)));
+      });
+    }
   }
   async openCapture(mode, context = {}) {
     let directory;
@@ -8462,6 +8884,15 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     const path = resolveAssociationPath(value, this.app.vault.getMarkdownFiles());
     if (path) void this.openFile(path);
     else new import_obsidian10.Notice("\u65E0\u6CD5\u627E\u5230\u5173\u8054\u7684\u6765\u6E90\u7B14\u8BB0\u3002");
+  }
+  async openNextSteps(path) {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof import_obsidian10.TFile)) throw new Error("\u95EE\u9898\u539F\u6587\u5DF2\u4E0D\u5B58\u5728\u3002");
+    const raw = await this.app.vault.read(file);
+    const section = readNextSteps(parseNote({ path, content: raw }));
+    const leaf = this.app.workspace.getLeaf("tab");
+    if (section.line === void 0) await leaf.openFile(file);
+    else await leaf.openFile(file, { eState: { line: section.line } });
   }
   async openFile(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
@@ -8668,7 +9099,7 @@ projects: ["[[${this.snapshot?.project.title ?? "Project"}]]"]
 var import_obsidian11 = require("obsidian");
 
 // src/ui/settings-model.ts
-var DEFAULT_SETTINGS = { density: "comfortable", accentMode: "theme", tagMode: "full", rightRail: "fixed", iconStyle: "linear", ...DEFAULT_DATA_SCOPE };
+var DEFAULT_SETTINGS = { density: "comfortable", accentMode: "theme", tagMode: "full", rightRail: "fixed", iconStyle: "linear", columnLayout: normalizeColumnPreferences(), ...DEFAULT_DATA_SCOPE };
 
 // src/ui/settings.ts
 var ResearchWorkbenchSettingTab = class extends import_obsidian11.PluginSettingTab {
@@ -8691,10 +9122,6 @@ var ResearchWorkbenchSettingTab = class extends import_obsidian11.PluginSettingT
     }));
     new import_obsidian11.Setting(this.containerEl).setName("\u6807\u7B7E\u663E\u793A").addDropdown((dropdown) => dropdown.addOptions({ full: "\u5B8C\u6574", compact: "\u7D27\u51D1", icon: "\u53EA\u663E\u793A\u56FE\u6807" }).setValue(plugin.settings.tagMode).onChange(async (value) => {
       plugin.settings.tagMode = value;
-      await plugin.saveSettings();
-    }));
-    new import_obsidian11.Setting(this.containerEl).setName("\u53F3\u680F").addDropdown((dropdown) => dropdown.addOptions({ fixed: "\u56FA\u5B9A", collapsible: "\u53EF\u6298\u53E0", stacked: "\u7A84\u5C4F\u5806\u53E0" }).setValue(plugin.settings.rightRail).onChange(async (value) => {
-      plugin.settings.rightRail = value;
       await plugin.saveSettings();
     }));
     new import_obsidian11.Setting(this.containerEl).setName("\u56FE\u6807\u98CE\u683C").addDropdown((dropdown) => dropdown.addOptions({ linear: "\u7EBF\u6027", solid: "\u5B9E\u5FC3" }).setValue(plugin.settings.iconStyle).onChange(async (value) => {
@@ -8722,10 +9149,12 @@ var ResearchWorkbenchPlugin = class extends import_obsidian12.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "settings", { ...DEFAULT_SETTINGS });
+    __publicField(this, "settingsWrite", Promise.resolve());
   }
   async onload() {
-    this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() ?? {} };
-    this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf, this.settings));
+    const loaded = await this.loadData() ?? {};
+    this.settings = { ...DEFAULT_SETTINGS, ...loaded, columnLayout: normalizeColumnPreferences(loaded.columnLayout) };
+    this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf, this.settings, { preferences: this.settings.columnLayout, save: (value) => this.saveColumnPreferences(value) }));
     this.addSettingTab(new ResearchWorkbenchSettingTab(this.app, this));
     this.addCommand({ id: "open-workbench", name: "Open workbench", callback: () => void this.activate() });
     this.addCommand({ id: "create-project", name: "Create project", callback: () => void this.withView((view) => view.openProjectWizard()) });
@@ -8735,9 +9164,23 @@ var ResearchWorkbenchPlugin = class extends import_obsidian12.Plugin {
     this.addCommand({ id: "open-inbox", name: "Open inbox", callback: () => void this.withView((view) => view.openGlobalInbox()) });
     this.addCommand({ id: "reference-note", name: "Add existing note to inbox", callback: () => void this.withView((view) => view.captureExistingNote()) });
   }
+  writeSettings() {
+    const value = JSON.parse(JSON.stringify(this.settings));
+    this.settingsWrite = this.settingsWrite.catch(() => {
+    }).then(() => this.saveData(value));
+    return this.settingsWrite;
+  }
   async saveSettings() {
-    await this.saveData(this.settings);
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)) if (leaf.view instanceof ResearchWorkbenchView) leaf.view.setDataScope(this.settings);
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)) if (leaf.view instanceof ResearchWorkbenchView) {
+      leaf.view.setDataScope(this.settings);
+      leaf.view.setColumnPreferences(this.settings.columnLayout);
+    }
+    await this.writeSettings();
+  }
+  async saveColumnPreferences(value) {
+    this.settings.columnLayout = normalizeColumnPreferences(value);
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)) if (leaf.view instanceof ResearchWorkbenchView) leaf.view.setColumnPreferences(this.settings.columnLayout);
+    await this.writeSettings();
   }
   async withView(action) {
     await this.activate();

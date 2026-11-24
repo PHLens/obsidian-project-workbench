@@ -27,6 +27,8 @@ export interface WorkbenchActions {
   toggleFullText: (value: boolean) => void;
   openProjectNote: () => void;
   openProblem: (problem: ProblemSummary) => void;
+  openNextSteps: (problem: ProblemSummary) => void;
+  setNextStepsExpanded: (path: string, expanded: boolean) => void;
   createProject: () => void;
   createProblem: () => void;
   createTask: () => void;
@@ -95,7 +97,9 @@ function renderWorkbenchContents(container: HTMLElement, context: WorkbenchRende
   const root = container.createDiv({ cls: `research-workbench rw-shell rw-density-${context.state.density}` }); root.dataset.panel = context.state.panel;
   renderMainHeader(root, context, actions);
   const layout = root.createDiv({ cls: `rw-layout ${context.state.panel === 'workspace' && context.snapshot ? '' : 'rw-layout-two-column'}` });
-  renderProjectSidebar(layout, context.projects, context.state, actions, getInboxCounts(context.inbox ?? []).pending);
+  const sidebar = renderProjectSidebar(layout, context.projects, context.state, actions, getInboxCounts(context.inbox ?? []).pending);
+  const closeSidebar = sidebar.createEl('button', { cls: 'rw-column-close', text: '收起导航', type: 'button' }); closeSidebar.dataset.columnClose = 'left'; sidebar.prepend(closeSidebar);
+  const leftGrip = layout.createEl('button', { cls: 'rw-column-separator', type: 'button' }); leftGrip.dataset.columnResize = 'left';
   const main = layout.createDiv({ cls: 'rw-main-column' });
   const snapshot = context.snapshot;
   if (context.state.panel === 'inbox') {
@@ -144,6 +148,9 @@ function renderWorkbenchContents(container: HTMLElement, context: WorkbenchRende
   const filtered = filterWorkbenchItems(snapshot, context.state.query, { fullText: context.state.fullText, includeArchived: context.state.includeArchived, status: context.state.status, stage: context.state.stage, researchRole: context.state.researchRole, sources: context.state.sources });
   if (!filtered.problems.length) renderEmptyState(problemArea, context.state.query ? 'search' : 'problem', actions);
   else renderProblemTable(problemArea, { ...snapshot, problems: filtered.problems, tasks: filtered.tasks, pendingInputs: filtered.pendingInputs }, context.state, actions);
-  const rail = layout.createDiv({ cls: 'rw-right-rail' }); renderFocusPanel(rail, snapshot, actions); renderTimeline(rail, context.events, actions); renderPendingInbox(rail, snapshot.pendingInputs, actions);
+  const rightGrip = layout.createEl('button', { cls: 'rw-column-separator', type: 'button' }); rightGrip.dataset.columnResize = 'right';
+  const rail = layout.createDiv({ cls: 'rw-right-rail' });
+  const closeRail = rail.createEl('button', { cls: 'rw-column-close', text: '收起概览', type: 'button' }); closeRail.dataset.columnClose = 'right';
+  renderFocusPanel(rail, snapshot, actions); renderTimeline(rail, context.events, actions); renderPendingInbox(rail, snapshot.pendingInputs, actions);
   return root;
 }

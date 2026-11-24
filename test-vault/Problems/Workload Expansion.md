@@ -29,3 +29,11 @@ explicit_pending: false
 ## Next Step
 
 - [ ] Select representative workload #task
+- [x] Record the baseline configuration
+- [ ] Identify the constraints introduced by each workload
+  - [ ] Compare memory and synchronization requirements
+- [ ] Define the first reproducible experiment
+
+## Review Notes
+
+Keep completed steps in the source for traceability.

@@ -99,12 +99,16 @@ research_role: probe
 # Q
 
 ## Overview
+Readable overview
+
+## Analysis
 needle-body-only
 
 ## Next Step
 - [ ] next action`);
     const snapshot = buildProjectSnapshot([project, q, task], project.path);
     expect(buildProjectIndex([project, task])).toHaveLength(1);
+    expect(filterWorkbenchItems(snapshot, 'Readable overview').problems.map((p) => p.title)).toEqual(['Q']);
     expect(filterWorkbenchItems(snapshot, 'needle-body-only', { fullText: false })).toMatchObject({ problems: [] });
     expect(filterWorkbenchItems(snapshot, 'needle-body-only', { fullText: true }).problems.map((p) => p.title)).toEqual(['Q']);
     expect(filterWorkbenchItems(snapshot, '', { includeArchived: false }).tasks).toEqual([]);

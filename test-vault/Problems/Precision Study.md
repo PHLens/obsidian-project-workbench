@@ -13,3 +13,9 @@ explicit_pending: false
 ## Overview
 
 低精度约束会怎样影响迁移的正确性与性能？
+
+## Next Steps
+
+- Define the acceptable error bound
+1. Select a small reference case
+2. Compare the results across precision settings

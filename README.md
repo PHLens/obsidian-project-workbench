@@ -6,14 +6,14 @@ Project Workbench is a mobile-compatible Obsidian plugin for project planning, r
 
 ![Project Workbench desktop preview](docs/assets/project-workbench-preview.svg)
 
-The preview shows the intended three-column workbench: project navigation on the left, the active project and problem list in the center, and focus/timeline/inbox context on the right.
+The illustration shows the workbench's three regions: project navigation on the left, the active project and problems in the center, and focus/timeline/inbox context on the right.
 
-The initial release uses a research-editorial layout:
+The workbench provides:
 
 - left project and navigation sidebar;
-- center project summary and problem table;
+- center project summary and layered problem cards;
 - right focus panel, timeline, related tasks, and pending inbox;
-- responsive stacked layout for narrow screens;
+- adjustable side columns and responsive drawers for narrow panes;
 - search, full-text opt-in, multi-select filters, and archived-item toggle;
 - create, edit, associate, focus, archive, and open actions;
 - conflict-aware Markdown frontmatter writes.
@@ -72,6 +72,14 @@ The header Inbox icon and sidebar badge show the global pending backlog. Clickin
 Each Inbox entry supports multiple project/problem associations. Association changes preserve its processing state. Pending, processed, and all-item views keep entries accessible after processing. Problem **View material** and the project rail open a filtered Inbox; shared Inbox navigation returns to the global list.
 
 Click problem status, stage, role, or tags to edit that field. Project status, current gate, and next milestone also support direct editing. Pick an existing value or enter a custom one; Escape cancels. Tags support multiple values, and longer goal text uses save/cancel controls. A note changed externally while its editor is open produces a conflict message and preserves the entered value.
+
+## Adjustable columns and problem cards
+
+Drag the separators to adjust navigation and context widths. Focus a separator and use the arrow keys to resize it; Home or a double click restores its default width. Header controls collapse either side and restore it, and the focus control temporarily shows only the main area. Requested widths and visibility are stored in the active configuration's local `data.json`.
+
+Narrow panes show the side columns as drawers. Open them from the header, close with Escape or an outside tap, and return to the saved column layout when more space is available.
+
+Each problem card separates its overview, editable properties, Next Step, and footer actions. Focused problems stay first. The Next Step preview shows three entries and expands to the full list, preserving source order and completion states. It reads checklist, bullet, and numbered entries under `## Next Step`, `## Next Steps`, or `## 下一步`. The preview is read-only; **Original note** opens the current source section for editing. Default problem search covers the overview and every Next Step entry.
 
 ## Build output
 

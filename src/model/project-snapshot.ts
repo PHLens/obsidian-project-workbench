@@ -4,24 +4,19 @@ export type { VaultFile } from './types';
 import { linkMatches, resolveProblemScope } from './types';
 import { isPathInDirectories, resolveDataScope } from './data-scope';
 import { buildInboxIndex, inboxForProject } from './inbox';
+import { problemOverview, readNextSteps } from './next-steps';
 
 function asString(value: unknown): string | undefined { return typeof value === 'string' && value.trim() ? value.trim() : undefined; }
 function asLinks(value: unknown): string[] { return Array.isArray(value) ? value.filter((x): x is string => typeof x === 'string') : typeof value === 'string' ? [value] : []; }
 function source(path: string, kind: string, label?: string): SourceRef { return { path, kind, label }; }
 function hasTag(note: Note, tag: string): boolean { const tags = asLinks((note.frontmatter ?? {}).tags); return tags.some((x) => x.replace(/^#/, '') === tag.replace(/^#/, '')); }
 function isArchived(note: Note): boolean { return note.frontmatter.archived === true || note.frontmatter.archived === 'true' || note.frontmatter.status === 'archived'; }
-function summaryText(note: Note): string | undefined { return asString(note.frontmatter.summary) ?? problemNextSteps(note)[0] ?? goalText(note); }
 
 export function isExplicitPendingInput(note: Note): boolean {
   const fm = note.frontmatter ?? parseNote(note).frontmatter ?? {};
   return fm.pending === true || fm.pending === 'true' || fm.processing_status === 'pending' || fm.review_status === 'pending' || hasTag(note, 'pending-discussion');
 }
 
-function problemNextSteps(note: Note): string[] {
-  const body = note.body ?? '';
-  const section = body.match(/^##\s+(?:Next Step|下一步)\s*\n([\s\S]*?)(?=^##\s|$)/m)?.[1] ?? '';
-  return [...section.matchAll(/^\s*-\s+\[[ xX]\]\s+(.+)$/gm)].map((m) => m[1].trim());
-}
 function goalText(note: Note): string | undefined {
   const body = note.body ?? '';
   const section = body.match(/^##\s+(?:Goal|Research Question|研究目标)\s*\n([\s\S]*?)(?=^##\s|$)/m)?.[1] ?? body;
@@ -40,7 +35,8 @@ export function buildProjectIndex(files: VaultFile[], options: { includeArchived
 }
 
 function problemSummary(note: Note, focus: Set<string>): ProblemSummary {
-  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, 'problem') };
+  const steps = readNextSteps(note);
+  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: steps.items.map(item => item.text), nextStepItems: steps.items, nextStepHeading: steps.heading === undefined ? undefined : { text: steps.heading, line: steps.line! }, summary: problemOverview(note), searchText: note.content, source: source(note.path, 'problem') };
 }
 
 export function resolveProjectProblems(project: Note, notes: Note[]): { confirmed: ProblemSummary[]; empty: boolean } {
@@ -82,7 +78,7 @@ export function filterWorkbenchItems(snapshot: ProjectSnapshot, query: string, f
   const values = (selected: string[] | undefined, value: string | undefined): boolean => !selected?.length || (!!value && selected.includes(value));
   const includeArchived = filters.includeArchived ?? false;
   return {
-    problems: snapshot.problems.filter((p) => (includeArchived || !p.archived) && match(p.title, p.summary ?? p.nextSteps[0], p.searchText) && values(filters.status, p.status) && values(filters.stage, p.stage) && values(filters.researchRole, p.researchRole) && values(filters.sources, p.source.kind)),
+    problems: snapshot.problems.filter((p) => (includeArchived || !p.archived) && match(p.title, [p.summary ?? '', ...p.nextSteps].join('\n'), p.searchText) && values(filters.status, p.status) && values(filters.stage, p.stage) && values(filters.researchRole, p.researchRole) && values(filters.sources, p.source.kind)),
     tasks: snapshot.tasks.filter((t) => (includeArchived || !t.archived) && match(t.title, t.priority, t.searchText) && values(filters.status, t.status) && values(filters.sources, t.source.kind)),
     pendingInputs: snapshot.pendingInputs.filter((i) => (includeArchived || !i.archived) && match(i.title, i.status, i.searchText) && values(filters.status, i.status) && values(filters.sources, i.source.kind)),
   };
