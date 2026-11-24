@@ -39,6 +39,6 @@
 
 ## Task 3: Browser checks and local testing handoff
 
-- [ ] Verify wide/narrow browser flows, state-change count updates, and filter-independent global reminders.
-- [ ] Run type checking, all tests, build, desktop/mobile bundle consistency, privacy checks, and diff checks; complete the Native final review.
-- [ ] Back up and install only the plugin's three runtime assets in both local device configurations. Verify local `data.json` and all other vault files remain unchanged.
+- [x] Verify wide/narrow browser flows, state-change count updates, and filter-independent global reminders.
+- [x] Run type checking, all tests, build, desktop/mobile bundle consistency, privacy checks, and diff checks; complete the Native final review.
+- [x] Back up and install only the plugin's three runtime assets in both local device configurations. Verify local `data.json` and all other vault files remain unchanged.

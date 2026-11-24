@@ -47,6 +47,8 @@ describe('Inbox attention indicators', () => {
     (document.querySelector('.rw-inbox-card .rw-link-button:last-child') as HTMLElement).click();
     expect(document.querySelector('[data-inbox-view=pending] .rw-inbox-tab-count')?.textContent).toBe('1');
     expect(document.querySelector('[data-inbox-view=processed] .rw-inbox-tab-count')?.textContent).toBe('1');
+    expect(document.querySelector('[data-inbox-view=pending]')?.getAttribute('aria-description')).toBe('当前范围 1 条待处理资料');
+    expect(document.querySelector('[data-inbox-view=processed]')?.getAttribute('aria-description')).toBe('当前范围 1 条已处理资料');
     expect(document.querySelector('.rw-inbox-notification .rw-inbox-count')?.textContent).toBe('2'); view.onunload();
   });
 });

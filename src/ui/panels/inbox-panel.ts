@@ -14,7 +14,10 @@ export function renderInboxPanel(container: HTMLElement, context: { entries: Inb
   const counts = getInboxCounts(filterInbox(context.entries, { ...context.filters, view: 'all' }, context.files));
   for (const [value, label] of [['pending', '待处理'], ['processed', '已处理'], ['all', '全部']] as const) {
     const button = controls.createEl('button', { cls: `rw-filter-tab ${context.filters.view === value ? 'is-active' : ''}`, attr: { 'aria-label': label } });
-    button.dataset.inboxView = value; button.createSpan({ text: label });
+    button.dataset.inboxView = value;
+    const count = value === 'all' ? counts.total : counts[value];
+    button.setAttribute('aria-description', `当前范围 ${count} 条${value === 'all' ? '' : label}资料`);
+    button.createSpan({ text: label });
     button.createSpan({ cls: 'rw-inbox-tab-count', text: String(value === 'all' ? counts.total : counts[value]), attr: { 'aria-hidden': 'true' } });
     button.onclick = () => actions.setInboxView(value);
   }
