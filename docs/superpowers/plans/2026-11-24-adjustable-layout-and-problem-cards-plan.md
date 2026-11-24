@@ -47,12 +47,12 @@
 - Extend ProblemSummary with optional nextStepItems and nextStepHeading; keep nextSteps: string[].
 - Snapshot builders populate both representations from the same extraction. Default search includes all entries.
 
-- [ ] Write tests/model/next-steps.test.ts against real snapshots: three checklist entries retain order and completion; plain/numbered/nested entries and continuations survive; fenced syntax and a later section are excluded; CRLF line offsets remain accurate; summary uses overview prose rather than an action.
-- [ ] Add search assertions for an action after the first entry, plus the existing full-text boundary.
-- [ ] Run npm test -- tests/model/next-steps.test.ts and observe the existing first-entry extraction failure.
-- [ ] Implement the additive model, bounded line-based parsing, overview derivation, and both search consumers.
-- [ ] Run the targeted tests and npm run typecheck. Expect all passing.
-- [ ] Commit with an English message and record the command/result in the ledger.
+- [x] Write tests/model/next-steps.test.ts against real snapshots: three checklist entries retain order and completion; plain/numbered/nested entries and continuations survive; fenced syntax and a later section are excluded; CRLF line offsets remain accurate; summary uses overview prose rather than an action.
+- [x] Add search assertions for an action after the first entry, plus the existing full-text boundary.
+- [x] Run npm test -- tests/model/next-steps.test.ts and observe the existing first-entry extraction failure.
+- [x] Implement the additive model, bounded line-based parsing, overview derivation, and both search consumers.
+- [x] Run the targeted tests and npm run typecheck. Expect all passing.
+- [x] Commit with an English message and record the command/result in the ledger.
 
 ### Task 2: Column geometry and controller
 
