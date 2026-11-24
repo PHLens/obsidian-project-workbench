@@ -73,6 +73,10 @@ export function getWorkbenchLayoutState(context: WorkbenchRenderContext): Workbe
 export function renderWorkbench(container: HTMLElement, context: WorkbenchRenderContext, actions: WorkbenchActions): HTMLElement {
   const active = container.ownerDocument.activeElement;
   const search = active && container.contains(active) && active.matches('input.rw-search') ? active as HTMLInputElement : null;
+  if (search?.dataset.composing === 'true') {
+    const existing = container.querySelector<HTMLElement>('.research-workbench');
+    if (existing) return existing;
+  }
   const selection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
   const scrollTop = container.scrollTop;
   const result = renderWorkbenchContents(container, context, actions);

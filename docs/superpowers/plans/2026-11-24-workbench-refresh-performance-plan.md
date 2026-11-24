@@ -30,6 +30,6 @@
 
 ## Task 3: Validation and local testing
 
-- [ ] Measure the same scoped data and representative browser editing flows, keeping private data outside the repo.
-- [ ] Complete Native final review, full checks, bundle consistency, and privacy scans.
-- [ ] Back up and replace only this plugin's desktop/mobile runtime assets; preserve settings and all unrelated vault files.
+- [x] Measure the same scoped data and representative browser editing flows, keeping private data outside the repo.
+- [x] Complete Native final review, full checks, bundle consistency, and privacy scans.
+- [x] Back up and replace only this plugin's desktop/mobile runtime assets; preserve settings and all unrelated vault files.

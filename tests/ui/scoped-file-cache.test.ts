@@ -40,4 +40,13 @@ describe('scoped file content cache', () => {
     expect(second).toBe(first);expect(second.mtime).toBe(2);
   });
 
+  it('retains forced invalidation across cancellation for every queued file', async () => {
+    const cache=new ScopedFileCache();const files=[{path:'Inputs/A.md',stat:{mtime:1,size:3}},{path:'Inputs/B.md',stat:{mtime:1,size:3}}];
+    const values=new Map([['Inputs/A.md','old'],['Inputs/B.md','old']]);const read=vi.fn(async(file:{path:string})=>values.get(file.path)!);
+    await cache.load(files,read);values.set('Inputs/A.md','new');values.set('Inputs/B.md','new');
+    let finish:(text:string)=>void=()=>{};const pending=new Promise<string>(resolve=>{finish=resolve;});read.mockImplementationOnce(()=>pending);
+    let active=true;const aborted=cache.load(files,read,new Set(files.map(file=>file.path)),()=>active);active=false;finish('new');await aborted;
+    expect((await cache.load(files,read)).map(file=>file.content)).toEqual(['new','new']);
+  });
+
 });

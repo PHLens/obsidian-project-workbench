@@ -89,4 +89,27 @@ describe('refresh performance boundaries', () => {
     expect(test.read).toHaveBeenCalledTimes(1);await vi.advanceTimersByTimeAsync(250);expect(test.read).toHaveBeenCalledTimes(2);view.onunload();
   });
 
+  it('does not resurrect a forced stale cache entry after close and reopen', async () => {
+    setupDom();const old='---\ntype: project\ntitle: Old\n---\n# P';const fresh=old.replace('Old','New');const test=interactiveVault({'Projects/P.md':old});
+    const view=new ResearchWorkbenchView({app:test.app} as unknown as WorkspaceLeaf,scope);await view.onOpen();
+    test.contents.set('Projects/P.md',fresh);let finish:(text:string)=>void=()=>{};const pending=new Promise<string>(resolve=>{finish=resolve;});test.read.mockImplementationOnce(()=>pending);
+    test.handlers.get('modify')!(test.files.get('Projects/P.md')!);const forced=view.refresh();await new Promise(resolve=>setTimeout(resolve,0));
+    await view.onClose();await view.onOpen();finish(fresh);await forced;
+    expect(document.querySelector('.rw-project-title-line h1')?.textContent).toBe('New');view.onunload();
+  });
+  it('keeps an IME composition alive until the final search value is committed', async () => {
+    const {browser}=setupDom();vi.useFakeTimers();const test=interactiveVault({'Projects/P.md':project});const view=new ResearchWorkbenchView({app:test.app} as unknown as WorkspaceLeaf,scope);await view.onOpen();
+    const input=document.querySelector<HTMLInputElement>('.rw-search')!;input.focus();input.dispatchEvent(new browser.CompositionEvent('compositionstart',{bubbles:true}) as unknown as Event);input.value='pin';input.dispatchEvent(new browser.InputEvent('input',{bubbles:true,isComposing:true}) as unknown as Event);
+    await vi.advanceTimersByTimeAsync(100);expect(document.querySelector('.rw-search')).toBe(input);
+    input.value='拼音';input.dispatchEvent(new browser.CompositionEvent('compositionend',{bubbles:true}) as unknown as Event);await vi.advanceTimersByTimeAsync(40);
+    expect(document.querySelector<HTMLInputElement>('.rw-search')?.value).toBe('拼音');expect(document.activeElement).toBe(document.querySelector('.rw-search'));view.onunload();
+  });
+  it('defers a vault-driven redraw while IME composition is active', async () => {
+    const {browser}=setupDom();const test=interactiveVault({'Projects/P.md':project});const view=new ResearchWorkbenchView({app:test.app} as unknown as WorkspaceLeaf,scope);await view.onOpen();
+    const input=document.querySelector<HTMLInputElement>('.rw-search')!;input.focus();input.dispatchEvent(new browser.CompositionEvent('compositionstart',{bubbles:true}) as unknown as Event);
+    await test.app.vault.modify(test.files.get('Projects/P.md')! as never,'---\ntype: project\ntitle: Updated\n---\n# P');await view.refresh();
+    expect(document.querySelector('.rw-search')).toBe(input);input.value='';input.dispatchEvent(new browser.CompositionEvent('compositionend',{bubbles:true}) as unknown as Event);await new Promise(resolve=>setTimeout(resolve,60));
+    expect(document.querySelector('.rw-project-title-line h1')?.textContent).toBe('Updated');view.onunload();
+  });
+
 });

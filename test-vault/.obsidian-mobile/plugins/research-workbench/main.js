@@ -6323,11 +6323,19 @@ function stringify3(value, replacer, options) {
 }
 
 // src/model/frontmatter.ts
+var parsedNotes = /* @__PURE__ */ new WeakMap();
 function parseNote(file) {
+  const cached = parsedNotes.get(file);
+  if (cached?.content === file.content) {
+    if (cached.note.path !== file.path || cached.note.mtime !== file.mtime) cached.note = { ...cached.note, path: file.path, mtime: file.mtime };
+    return cached.note;
+  }
   const match = file.content.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/);
   const frontmatter = match ? parse(match[1]) ?? {} : {};
   const body = match ? file.content.slice(match[0].length) : file.content;
-  return { ...file, frontmatter: typeof frontmatter === "object" && frontmatter ? frontmatter : {}, body };
+  const note = { ...file, frontmatter: typeof frontmatter === "object" && frontmatter ? frontmatter : {}, body };
+  parsedNotes.set(file, { content: file.content, note });
+  return note;
 }
 function parseNotes(files) {
   return files.map(parseNote);
@@ -6339,6 +6347,21 @@ function titleFor(note) {
 }
 function firstHeading(note) {
   return note.body?.match(/^#\s+(.+)$/m)?.[1]?.trim();
+}
+async function primeParsedNotes(files, keepGoing = () => true, yieldControl = () => new Promise((resolve) => setTimeout(resolve, 0))) {
+  if (!keepGoing()) return false;
+  let decoded = 0;
+  for (const file of files) {
+    const uncached = parsedNotes.get(file)?.content !== file.content;
+    if (uncached && decoded >= 24) {
+      await yieldControl();
+      decoded = 0;
+      if (!keepGoing()) return false;
+    }
+    parseNote(file);
+    if (uncached) decoded++;
+  }
+  return keepGoing();
 }
 
 // src/model/data-scope.ts
@@ -6516,7 +6539,8 @@ ${asString(note.frontmatter.source) ?? ""}`, source: source(note.path, "project"
 }
 function buildProjectIndex(files, options = {}) {
   const dataScope = options.projectDirectories ? resolveDataScope({ projectDirectories: options.projectDirectories }) : void 0;
-  return parseNotes(files).filter((note) => note.frontmatter.type === "project" && (!dataScope || isPathInDirectories(note.path, dataScope.projectDirectories)) && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a, b) => a.path.localeCompare(b.path));
+  const candidates = dataScope ? files.filter((file) => isPathInDirectories(file.path, dataScope.projectDirectories)) : files;
+  return parseNotes(candidates).filter((note) => note.frontmatter.type === "project" && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a, b) => a.path.localeCompare(b.path));
 }
 function problemSummary(note, focus) {
   return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, "problem") };
@@ -6692,7 +6716,19 @@ function renderMainHeader(container, context, actions) {
   const search = header.createDiv({ cls: "rw-search-wrap" });
   const input = search.createEl("input", { cls: "rw-search", type: SEARCH_CONTROL_CONTRACT.inputType, placeholder: "\u641C\u7D22\u9879\u76EE\u3001\u7814\u7A76\u95EE\u9898\u4E0E\u8D44\u6599", value: context.state.query });
   input.setAttribute("role", SEARCH_CONTROL_CONTRACT.role);
-  input.oninput = () => actions.setQuery(input.value);
+  let composing = false;
+  input.addEventListener("compositionstart", () => {
+    composing = true;
+    input.dataset.composing = "true";
+  });
+  input.addEventListener("compositionend", () => {
+    composing = false;
+    delete input.dataset.composing;
+    actions.setQuery(input.value);
+  });
+  input.oninput = (event) => {
+    if (!composing && !event.isComposing) actions.setQuery(input.value);
+  };
   const searchIcon = search.createSpan({ cls: "rw-search-icon" });
   renderIcon(searchIcon, "search");
   const capture = header.createDiv({ cls: "rw-record-actions" });
@@ -6975,6 +7011,26 @@ function renderProjectNotePanel(container, snapshot, open) {
 
 // src/ui/components/workbench-shell.ts
 function renderWorkbench(container, context, actions) {
+  const active = container.ownerDocument.activeElement;
+  const search = active && container.contains(active) && active.matches("input.rw-search") ? active : null;
+  if (search?.dataset.composing === "true") {
+    const existing = container.querySelector(".research-workbench");
+    if (existing) return existing;
+  }
+  const selection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
+  const scrollTop = container.scrollTop;
+  const result = renderWorkbenchContents(container, context, actions);
+  container.scrollTop = scrollTop;
+  if (selection) {
+    const replacement = container.querySelector("input.rw-search");
+    if (replacement) {
+      replacement.focus({ preventScroll: true });
+      if (selection.start !== null && selection.end !== null) replacement.setSelectionRange(selection.start, selection.end, selection.direction ?? void 0);
+    }
+  }
+  return result;
+}
+function renderWorkbenchContents(container, context, actions) {
   container.empty();
   const root = container.createDiv({ cls: `research-workbench rw-shell rw-density-${context.state.density}` });
   root.dataset.panel = context.state.panel;
@@ -7955,21 +8011,30 @@ function openPropertyEditor(anchor, options) {
 }
 
 // src/ui/refresh-scheduler.ts
-function createRefreshScheduler(schedule, delayMs = 80) {
+function createRefreshScheduler(schedule, delayMs = 250, maxWaitMs = 1500) {
   let timer;
+  let deadline;
   let disposed = false;
+  const clear = () => {
+    if (timer !== void 0) clearTimeout(timer);
+    if (deadline !== void 0) clearTimeout(deadline);
+    timer = void 0;
+    deadline = void 0;
+  };
+  const run = () => {
+    clear();
+    if (!disposed) schedule();
+  };
   return {
     request() {
-      if (disposed || timer !== void 0) return;
-      timer = setTimeout(() => {
-        timer = void 0;
-        if (!disposed) schedule();
-      }, delayMs);
+      if (disposed) return;
+      if (timer !== void 0) clearTimeout(timer);
+      timer = setTimeout(run, delayMs);
+      if (deadline === void 0) deadline = setTimeout(run, Math.max(delayMs, maxWaitMs));
     },
     dispose() {
       disposed = true;
-      if (timer !== void 0) clearTimeout(timer);
-      timer = void 0;
+      clear();
     }
   };
 }
@@ -7979,15 +8044,27 @@ var ScopedFileCache = class {
   constructor() {
     __publicField(this, "contents", /* @__PURE__ */ new Map());
   }
-  async load(files, read, forcePaths = /* @__PURE__ */ new Set()) {
+  async load(files, read, forcePaths = /* @__PURE__ */ new Set(), keepLoading = () => true) {
+    const forcedEntries = /* @__PURE__ */ new Map();
+    for (const path of forcePaths) {
+      const previous = this.contents.get(path);
+      if (previous) forcedEntries.set(path, previous);
+      this.contents.delete(path);
+    }
+    if (!keepLoading()) return [];
     const active = new Set(files.map((file) => file.path));
     for (const path of this.contents.keys()) if (!active.has(path)) this.contents.delete(path);
     const out = [];
     for (const file of files) {
+      if (!keepLoading()) return out;
       const stamp = `${file.stat.mtime}:${file.stat.size ?? ""}`;
-      let entry = this.contents.get(file.path);
+      let entry = this.contents.get(file.path) ?? forcedEntries.get(file.path);
       if (!entry || entry.stamp !== stamp || forcePaths.has(file.path)) {
-        entry = { stamp, file: { path: file.path, content: await read(file), mtime: file.stat.mtime } };
+        const content = await read(file);
+        if (!keepLoading()) return out;
+        const cachedFile = entry?.file.content === content ? entry.file : { path: file.path, content, mtime: file.stat.mtime };
+        cachedFile.mtime = file.stat.mtime;
+        entry = { stamp, file: cachedFile };
         this.contents.set(file.path, entry);
       }
       out.push(entry.file);
@@ -8020,8 +8097,14 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     __publicField(this, "queryRenderTimer");
     __publicField(this, "closePropertyEditor");
     __publicField(this, "disposed", false);
+    __publicField(this, "opened", false);
+    __publicField(this, "lifecycleVersion", 0);
+    __publicField(this, "renderPending", false);
+    __publicField(this, "eventDisposers", []);
+    __publicField(this, "workbenchLeaf");
     __publicField(this, "projectPath", "");
     __publicField(this, "state", { ...DEFAULT_WORKBENCH_STATE, projectPath: this.projectPath });
+    this.workbenchLeaf = leaf;
     this.dataScope = resolveDataScope(dataScope);
   }
   getViewType() {
@@ -8034,30 +8117,65 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     return "layout-dashboard";
   }
   async onOpen() {
+    if (this.opened) return;
+    this.opened = true;
     this.disposed = false;
+    this.lifecycleVersion++;
     this.refreshScheduler = createRefreshScheduler(() => {
-      if (this.dirtyPaths.size) void this.refresh();
+      if (this.dirtyPaths.size && this.isViewVisible()) void this.refresh();
     });
     const changed = (path) => {
+      if (this.disposed) return;
       const directories = allDataDirectories(this.dataScope);
       if (isPathInDirectories(path, directories) || directories.some((directory) => directory.startsWith(`${path}/`))) {
         this.dirtyPaths.add(path);
         this.refreshScheduler?.request();
       }
     };
-    this.registerEvent(this.app.vault.on("modify", (file) => {
+    this.watch(this.app.vault.on("modify", (file) => {
       if (file.path.endsWith(".md")) changed(file.path);
-    }));
-    this.registerEvent(this.app.vault.on("create", (file) => changed(file.path)));
-    this.registerEvent(this.app.vault.on("delete", (file) => changed(file.path)));
-    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+    }), this.app.vault);
+    this.watch(this.app.vault.on("create", (file) => changed(file.path)), this.app.vault);
+    this.watch(this.app.vault.on("delete", (file) => changed(file.path)), this.app.vault);
+    this.watch(this.app.vault.on("rename", (file, oldPath) => {
       changed(oldPath);
       changed(file.path);
-    }));
+    }), this.app.vault);
+    const catchUp = () => {
+      if (this.disposed || this.refreshTask || !this.dirtyPaths.size && !this.renderPending || !this.isViewVisible()) return;
+      void this.refresh();
+    };
+    if (typeof this.app.workspace?.on === "function") {
+      this.watch(this.app.workspace.on("active-leaf-change", (leaf) => {
+        if (leaf === this.workbenchLeaf) catchUp();
+      }), this.app.workspace);
+      this.watch(this.app.workspace.on("layout-change", catchUp), this.app.workspace);
+    }
+    const doc = this.contentEl?.ownerDocument;
+    if (doc) {
+      doc.addEventListener("visibilitychange", catchUp);
+      this.eventDisposers.push(() => doc.removeEventListener("visibilitychange", catchUp));
+    }
     await this.refresh();
+  }
+  watch(ref, source2) {
+    this.eventDisposers.push(() => source2.offref?.(ref));
+  }
+  isViewVisible() {
+    const element = this.containerEl ?? this.contentEl;
+    if (element?.ownerDocument?.hidden) return false;
+    return typeof element?.isShown === "function" ? element.isShown() : true;
+  }
+  async onClose() {
+    this.onunload();
   }
   onunload() {
     this.disposed = true;
+    this.lifecycleVersion++;
+    this.refreshTask = null;
+    this.refreshPending = false;
+    this.opened = false;
+    this.eventDisposers.splice(0).forEach((dispose) => dispose());
     this.refreshScheduler?.dispose();
     this.closePropertyEditor?.();
     if (this.queryRenderTimer !== void 0) clearTimeout(this.queryRenderTimer);
@@ -8075,12 +8193,12 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     if (!directory) throw new Error(`\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u914D\u7F6E${labels[key]}\u76EE\u5F55\u3002`);
     return directory;
   }
-  async files() {
+  async files(generation = this.lifecycleVersion) {
     const directories = allDataDirectories(this.dataScope);
     const files = this.app.vault.getMarkdownFiles().filter((file) => isPathInDirectories(file.path, directories));
     const forced = new Set(this.dirtyPaths);
     this.dirtyPaths.clear();
-    return this.fileCache.load(files, (file) => this.app.vault.read(file), forced);
+    return this.fileCache.load(files, (file) => this.app.vault.read(file), forced, () => !this.disposed && generation === this.lifecycleVersion);
   }
   async refresh() {
     if (this.disposed) return;
@@ -8088,24 +8206,38 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
       this.refreshPending = true;
       return this.refreshTask;
     }
-    this.refreshTask = this.loadAndRender();
+    const generation = this.lifecycleVersion;
+    const task = this.loadAndRender(generation);
+    this.refreshTask = task;
     try {
-      await this.refreshTask;
+      await task;
     } catch (error) {
-      new import_obsidian10.Notice(String(error));
+      if (!this.disposed && generation === this.lifecycleVersion) new import_obsidian10.Notice(String(error));
     } finally {
-      this.refreshTask = null;
+      if (this.refreshTask === task) {
+        this.refreshTask = null;
+        if (!this.disposed && generation === this.lifecycleVersion && (this.dirtyPaths.size || this.refreshPending)) this.refreshScheduler?.request();
+      }
     }
   }
-  async loadAndRender() {
+  async loadAndRender(generation) {
     do {
       this.refreshPending = false;
-      const files = await this.files();
-      if (this.disposed) return;
+      const files = await this.files(generation);
+      if (this.disposed || generation !== this.lifecycleVersion) return;
       this.cachedFiles = files;
+      if (!this.isViewVisible()) {
+        this.renderPending = true;
+        return;
+      }
+      const ready = await primeParsedNotes(files, () => !this.disposed && generation === this.lifecycleVersion && this.isViewVisible());
+      if (!ready) {
+        if (!this.disposed && generation === this.lifecycleVersion) this.renderPending = true;
+        return;
+      }
       this.rebuildCachedSnapshot();
       this.render();
-    } while (!this.disposed && (this.refreshPending || this.dirtyPaths.size));
+    } while (!this.disposed && generation === this.lifecycleVersion && this.refreshPending);
   }
   async refreshAffected(...paths) {
     paths.forEach((path) => this.dirtyPaths.add(path));
@@ -8248,6 +8380,11 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     if (this.cachedFiles && !this.disposed) this.render();
   }
   render() {
+    if (!this.isViewVisible()) {
+      this.renderPending = true;
+      return;
+    }
+    this.renderPending = false;
     let inboxProblemPaths = [];
     const association = this.state.inboxAssociation;
     if (association?.kind === "project" && this.cachedFiles && this.cachedProjects.some((project) => project.path === association.path)) inboxProblemPaths = buildProjectSnapshot(this.cachedFiles, association.path, { includeArchived: true, ...this.dataScope }).problems.map((problem) => problem.path);
