@@ -26,5 +26,5 @@
 
 ## Task 3: Verification and local handoff
 
-- [ ] Run all tests, type checking/build, browser regressions, device consistency, privacy and diff checks, and Native final review.
-- [ ] Back up and install only the plugin's runtime assets in both local device configurations. Preserve settings, notes, and unrelated plugins.
+- [x] Run all tests, type checking/build, browser regressions, device consistency, privacy and diff checks, and Native final review.
+- [x] Back up and install only the plugin's runtime assets in both local device configurations. Preserve settings, notes, and unrelated plugins.

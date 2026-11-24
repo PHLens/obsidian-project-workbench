@@ -37,4 +37,20 @@ describe('Focus-first problem display',()=>{
   expect(titles(document.body)[0]).toBe('B');
   expect(parse(test.contents.get('Projects/P.md')!.match(/^---\n([\s\S]*?)\n---/)![1]).focus_problems).toEqual(['[[Problems/B.md]]']);view.onunload();
  });
+ it('cancels a scalar legacy Focus alias using the same resolution as the display',async()=>{
+  setupDom();const raw='---\ntype: project\nproblems: ["[[Problems/B.md]]"]\nfocus_problems: "[[B|Legacy label]]"\n---\n# P';
+  const test=interactiveVault({'Projects/P.md':raw,'Problems/B.md':'---\ntype: problem\n---\n# B'});
+  const view=new ResearchWorkbenchView({app:test.app} as unknown as WorkspaceLeaf,{projectDirectories:['Projects'],problemDirectories:['Problems']});await view.onOpen();
+  (document.querySelector('.rw-problem-row.is-focus [aria-label="取消焦点"]') as HTMLElement).click();await flushUi();await flushUi();
+  expect(parse(test.contents.get('Projects/P.md')!.match(/^---\n([\s\S]*?)\n---/)![1]).focus_problems).toEqual([]);view.onunload();
+ });
+ it('does not add another Focus alias when an external edit already added the target',async()=>{
+  setupDom();const raw='---\ntype: project\nproblems: ["[[Problems/B.md]]"]\n---\n# P';
+  const test=interactiveVault({'Projects/P.md':raw,'Problems/B.md':'---\ntype: problem\n---\n# B'});
+  const view=new ResearchWorkbenchView({app:test.app} as unknown as WorkspaceLeaf,{projectDirectories:['Projects'],problemDirectories:['Problems']});await view.onOpen();
+  test.contents.set('Projects/P.md',raw.replace('problems: ["[[Problems/B.md]]"]','problems: ["[[Problems/B.md]]"]\nfocus_problems: ["[[B|Existing label]]"]'));
+  (document.querySelector('[aria-label="设为焦点"]') as HTMLElement).click();await flushUi();await flushUi();
+  expect(parse(test.contents.get('Projects/P.md')!.match(/^---\n([\s\S]*?)\n---/)![1]).focus_problems).toEqual(['[[B|Existing label]]']);view.onunload();
+ });
+
 });
