@@ -1,6 +1,6 @@
 filters:
   and:
-    - file.inFolder("Spaces/Research/Problems")
+    - file.inFolder("Problems")
     - file.hasTag("problem")
 views:
   - type: table

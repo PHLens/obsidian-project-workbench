@@ -4,3 +4,6 @@ coverage/
 backups/
 test-vault/.obsidian/
 *.local
+.venv/
+.superpowers/
+**/plugins/research-workbench/data.json

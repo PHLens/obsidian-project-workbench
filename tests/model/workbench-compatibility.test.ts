@@ -4,7 +4,7 @@ import type { VaultFile } from '../../src/model/types';
 
 const file = (path: string, content: string, mtime?: number): VaultFile => ({ path, content, mtime });
 
-const koram = file('Spaces/Research/Projects/Demo Project.md', `---
+const demoProject = file('Projects/Demo Project.md', `---
 type: project
 title: Demo Project
 status: proposed
@@ -18,7 +18,7 @@ focus_problems: []
 ## Next Milestone
 目标：完成基础验证
 `);
-const unrelatedProblem = file('Spaces/Research/Problems/Workload Expansion.md', `---
+const unrelatedProblem = file('Problems/Workload Expansion.md', `---
 type: problem
 status: exploring
 stage: evaluation
@@ -33,7 +33,7 @@ up: "[[LLM-guided high performance Kernel Generation]]"
 ## Next Step
 - [ ] Select representative workload
 `);
-    const task = file('Spaces/GTD/Tasks/代表性 workload.md', `---
+    const task = file('Tasks/代表性 workload.md', `---
 status: in-progress
 priority: high
 tags: [task]
@@ -45,14 +45,14 @@ archived: true
 
 describe('workbench compatibility model', () => {
   it('keeps Demo Project empty when there is no explicit relation', () => {
-    const notes = [koram, unrelatedProblem].map((f) => ({ ...f, frontmatter: {} as Record<string, unknown> }));
-    const snapshot = buildProjectSnapshot([koram, unrelatedProblem], koram.path);
+    const notes = [demoProject, unrelatedProblem].map((f) => ({ ...f, frontmatter: {} as Record<string, unknown> }));
+    const snapshot = buildProjectSnapshot([demoProject, unrelatedProblem], demoProject.path);
     expect(resolveProjectProblems(notes[0], notes)).toEqual({ confirmed: [], empty: true });
     expect(snapshot.problems).toEqual([]);
   });
 
   it('preserves observed legacy status, stage, role, and multiple focus links', () => {
-    const project = file('Spaces/Research/Projects/P.md', `---
+    const project = file('Projects/P.md', `---
 type: project
 title: P
 status: proposed
@@ -60,14 +60,14 @@ problems: ["[[Q]]", "[[R]]"]
 focus_problems: ["[[Q]]", "[[R]]"]
 ---
 # P`);
-    const q = file('Spaces/Research/Problems/Q.md', `---
+    const q = file('Problems/Q.md', `---
 type: problem
 status: exploring
 stage: evaluation
 research_role: mainline
 ---
 # Q`);
-    const r = file('Spaces/Research/Problems/R.md', `---
+    const r = file('Problems/R.md', `---
 type: problem
 status: in-progress
 stage: inbox
@@ -79,18 +79,18 @@ research_role: probe
       ['exploring', 'evaluation', 'mainline'],
       ['in-progress', 'inbox', 'probe'],
     ]);
-    expect(snapshot.focusProblemPaths).toEqual(['Spaces/Research/Problems/Q.md', 'Spaces/Research/Problems/R.md']);
+    expect(snapshot.focusProblemPaths).toEqual(['Problems/Q.md', 'Problems/R.md']);
   });
 
   it('filters archived items and searches summary fields by default but body only in full-text mode', () => {
-    const project = file('Spaces/Research/Projects/P.md', `---
+    const project = file('Projects/P.md', `---
 type: project
 title: P
 status: active
 problems: ["[[Q]]"]
 ---
 # P`);
-    const q = file('Spaces/Research/Problems/Q.md', `---
+    const q = file('Problems/Q.md', `---
 type: problem
 status: exploring
 stage: evaluation

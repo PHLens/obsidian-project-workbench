@@ -1,3 +1,6 @@
 import type { WorkbenchDensity } from '../model/view-state';
-export interface ResearchWorkbenchSettings { density: WorkbenchDensity; accentMode: 'theme' | 'indigo'; tagMode: 'full' | 'compact' | 'icon'; rightRail: 'fixed' | 'collapsible' | 'stacked'; iconStyle: 'linear' | 'solid'; }
-export const DEFAULT_SETTINGS: ResearchWorkbenchSettings = { density: 'comfortable', accentMode: 'theme', tagMode: 'full', rightRail: 'fixed', iconStyle: 'linear' };
+import { DEFAULT_DATA_SCOPE } from '../model/data-scope';
+export type { WorkbenchDataScope } from '../model/data-scope';
+export { DEFAULT_DATA_SCOPE, normalizeDirectoryList, isPathInDirectories } from '../model/data-scope';
+export interface ResearchWorkbenchSettings { density: WorkbenchDensity; accentMode: 'theme' | 'indigo'; tagMode: 'full' | 'compact' | 'icon'; rightRail: 'fixed' | 'collapsible' | 'stacked'; iconStyle: 'linear' | 'solid'; projectDirectories: string[]; problemDirectories: string[]; taskDirectories: string[]; inputDirectories: string[]; recordDirectories: string[]; }
+export const DEFAULT_SETTINGS: ResearchWorkbenchSettings = { density: 'comfortable', accentMode: 'theme', tagMode: 'full', rightRail: 'fixed', iconStyle: 'linear', ...DEFAULT_DATA_SCOPE };

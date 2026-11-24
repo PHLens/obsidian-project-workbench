@@ -6,7 +6,7 @@ describe('CRUD conflict safety', () => {
   it('rejects config, traversal, and non-Markdown paths', () => {
     expect(() => validateMarkdownPath('../outside.md')).toThrow();
     expect(() => validateMarkdownPath('.obsidian/app.json')).toThrow();
-    expect(() => validateMarkdownPath('Spaces/Research/Projects/P.md')).not.toThrow();
+    expect(() => validateMarkdownPath('Projects/P.md')).not.toThrow();
   });
   it('preflights duplicate project paths before creating either file', () => expect(() => preflightProjectBundle({ projectExists: true, problemExists: false })).toThrow('已存在'));
 });

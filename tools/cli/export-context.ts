@@ -16,7 +16,9 @@ export function assertSafeVault(vault: string): string {
 export function exportProjectContext(vault: string, project: string) {
   const root = assertSafeVault(vault);
   const files = readMarkdownFiles(root);
-  return { schemaVersion: 1, vault: root, project, snapshot: buildProjectSnapshot(files, project), sources: files.filter((f) => f.path === project || f.path.includes('Research/Problems') || f.path.includes('GTD/Tasks')).map((f) => ({ path: f.path, hash: sha256(f.content) })) };
+  const snapshot = buildProjectSnapshot(files, project);
+  const sourcePaths = new Set([project, ...snapshot.problems.map((item) => item.path), ...snapshot.tasks.map((item) => item.path)]);
+  return { schemaVersion: 1, vault: root, project, snapshot, sources: files.filter((f) => sourcePaths.has(f.path)).map((f) => ({ path: f.path, hash: sha256(f.content) })) };
 }
 export type UpdateOperation = { path: string; expectedHash: string; kind: 'property' | 'append' | 'pending'; name?: string; value?: unknown; content?: string };
 export function applyUpdatePlan(vault: string, operations: UpdateOperation[], apply = false) {

@@ -28,8 +28,11 @@ export function linkMatches(value: unknown, path: string, notes: Note[]): boolea
   return target?.path === path;
 }
 
-export function resolveProblemScope(project: Note, notes: Note[]): Set<string> {
-  const problems = notes.filter((note) => note.frontmatter.type === 'problem');
+import { isPathInDirectories, resolveDataScope } from './data-scope';
+
+export function resolveProblemScope(project: Note, notes: Note[], options: { problemDirectories?: string[] } = {}): Set<string> {
+  const dataScope = options.problemDirectories ? resolveDataScope(options) : undefined;
+  const problems = notes.filter((note) => note.frontmatter.type === 'problem' && (!dataScope || isPathInDirectories(note.path, dataScope.problemDirectories)));
   const direct = new Set<string>();
   const explicit = Array.isArray(project.frontmatter.problems) ? project.frontmatter.problems : project.frontmatter.problems ? [project.frontmatter.problems] : [];
   for (const problem of problems) {
