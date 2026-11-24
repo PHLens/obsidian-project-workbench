@@ -1,6 +1,7 @@
 export interface ColumnPreferences {
   leftWidth: number; rightWidth: number;
   leftCollapsed: boolean; rightCollapsed: boolean; focusMode: boolean;
+  preferredSide?: 'left' | 'right';
 }
 type Side = 'left' | 'right';
 const limits = { left: { min: 150, max: 360, initial: 220 }, right: { min: 190, max: 480, initial: 300 } };
@@ -10,7 +11,8 @@ export function normalizeColumnPreferences(value?: unknown): ColumnPreferences {
     const value = input[side + 'Width'];
     return typeof value === 'number' && Number.isFinite(value) ? Math.max(limits[side].min, Math.min(limits[side].max, value)) : limits[side].initial;
   };
-  return { leftWidth: width('left'), rightWidth: width('right'), leftCollapsed: input.leftCollapsed === true, rightCollapsed: input.rightCollapsed === true, focusMode: input.focusMode === true };
+  return { leftWidth: width('left'), rightWidth: width('right'), leftCollapsed: input.leftCollapsed === true, rightCollapsed: input.rightCollapsed === true, focusMode: input.focusMode === true,
+    ...(input.preferredSide === 'left' || input.preferredSide === 'right' ? { preferredSide: input.preferredSide } : {}) };
 }
 export function fitColumns(width: number, preferences: ColumnPreferences, hasRight: boolean): { left: number; right: number; narrow: boolean } {
   if (width < 840) return { left: 0, right: 0, narrow: true };
@@ -19,9 +21,13 @@ export function fitColumns(width: number, preferences: ColumnPreferences, hasRig
   const budget = width - 360 - (left ? 8 : 0) - (right ? 8 : 0);
   if (left + right > budget) {
     const leftMin = left ? limits.left.min : 0, rightMin = right ? limits.right.min : 0;
-    const scale = Math.max(0, (budget - leftMin - rightMin) / Math.max(1, left + right - leftMin - rightMin));
-    left = leftMin + (left ? left - leftMin : 0) * scale;
-    right = rightMin + (right ? right - rightMin : 0) * scale;
+    if (preferences.preferredSide === 'left' && left) { left = Math.min(left, budget - rightMin); right = Math.min(right, budget - left); }
+    else if (preferences.preferredSide === 'right' && right) { right = Math.min(right, budget - leftMin); left = Math.min(left, budget - right); }
+    else {
+      const scale = Math.max(0, (budget - leftMin - rightMin) / Math.max(1, left + right - leftMin - rightMin));
+      left = leftMin + (left ? left - leftMin : 0) * scale;
+      right = rightMin + (right ? right - rightMin : 0) * scale;
+    }
   }
   return { left, right, narrow: false };
 }
@@ -39,7 +45,7 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
   const backdrop = root.ownerDocument.createElement('div'); backdrop.className = 'rw-column-backdrop'; backdrop.hidden = true; layout.append(backdrop);
   let preferences = normalizeColumnPreferences(initial), disposed = false, drawer: Side | null = null;
   let frame: number | undefined;
-  let drag: { side: Side; pointer: number; startX: number; lastX: number; base: ColumnPreferences; target: HTMLElement; changed: boolean } | undefined;
+  let drag: { side: Side; pointer: number; startX: number; lastX: number; startWidth: number; base: ColumnPreferences; target: HTMLElement; changed: boolean } | undefined;
   const off: Array<() => void> = [];
   const listen = (el: EventTarget, type: string, callback: (event: any) => void) => { el.addEventListener(type, callback); off.push(() => el.removeEventListener(type, callback)); };
   const measured = () => root.getBoundingClientRect().width;
@@ -59,6 +65,7 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
     root.style.setProperty('--rw-right-width', geometry.right + 'px');
     root.style.setProperty('--rw-left-grip', geometry.left ? '8px' : '0px');
     root.style.setProperty('--rw-right-grip', geometry.right ? '8px' : '0px');
+    root.style.setProperty('--rw-drawer-height', Math.max(120, win.innerHeight - Math.max(0, layout.getBoundingClientRect().top) - 12) + 'px');
     for (const side of ['left', 'right'] as const) {
       const panel = panels[side], visible = geometry.narrow ? drawer === side : geometry[side] > 0;
       if (panel) {
@@ -73,7 +80,9 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
         handle.hidden = geometry.narrow || !geometry[side];
         handle.setAttribute('role', 'separator'); handle.setAttribute('aria-orientation', 'vertical');
         handle.setAttribute('aria-label', side === 'left' ? '调整导航栏宽度' : '调整概览栏宽度');
-        handle.setAttribute('aria-valuemin', String(limits[side].min)); handle.setAttribute('aria-valuemax', String(limits[side].max));
+        const other = side === 'left' ? 'right' : 'left';
+        const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - (geometry[other] ? limits[other].min : 0));
+        handle.setAttribute('aria-valuemin', String(limits[side].min)); handle.setAttribute('aria-valuemax', String(Math.max(limits[side].min, Math.floor(maximum))));
         handle.setAttribute('aria-valuenow', String(Math.round(geometry[side])));
       }
     }
@@ -94,20 +103,20 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
     }
   }
   function resizeBase(): ColumnPreferences {
-    const geometry = fitted();
-    return { ...preferences, leftWidth: geometry.left || preferences.leftWidth, rightWidth: geometry.right || preferences.rightWidth };
+    return { ...preferences };
   }
   function setWidth(side: Side, value: number, base: ColumnPreferences) {
     const geometry = fitColumns(measured(), base, !!rail), other = side === 'left' ? 'right' : 'left';
-    const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - geometry[other]);
-    preferences = { ...base, [side + 'Width']: Math.max(limits[side].min, Math.min(maximum, value)) };
+    const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - (geometry[other] ? limits[other].min : 0));
+    preferences = { ...base, [side + 'Width']: Math.max(limits[side].min, Math.min(maximum, value)), preferredSide: side };
     apply();
   }
   function flushDrag() {
     if (frame !== undefined) { win.cancelAnimationFrame(frame); frame = undefined; }
-    if (!drag || disposed || drag.lastX === drag.startX) return;
-    setWidth(drag.side, drag.base[drag.side === 'left' ? 'leftWidth' : 'rightWidth'] + (drag.lastX - drag.startX) * (drag.side === 'left' ? 1 : -1), drag.base);
-    drag.changed = true;
+    if (!drag || disposed) return;
+    if (drag.lastX === drag.startX) { preferences = { ...drag.base }; apply(); drag.changed = false; return; }
+    setWidth(drag.side, drag.startWidth + (drag.lastX - drag.startX) * (drag.side === 'left' ? 1 : -1), drag.base);
+    drag.changed = JSON.stringify(preferences) !== JSON.stringify(drag.base);
   }
   function endDrag(persist: boolean) {
     if (!drag) return;
@@ -127,7 +136,7 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
     if (!handle) continue;
     listen(handle, 'pointerdown', (event: PointerEvent) => {
       if (event.button !== 0 || fitted().narrow || disposed) return;
-      endDrag(false); drag = { side, pointer: event.pointerId, startX: event.clientX, lastX: event.clientX, base: resizeBase(), target: handle, changed: false };
+      endDrag(false); drag = { side, pointer: event.pointerId, startX: event.clientX, lastX: event.clientX, startWidth: fitted()[side], base: resizeBase(), target: handle, changed: false };
       handle.setPointerCapture?.(event.pointerId); root.classList.add('rw-resizing-columns'); event.preventDefault();
     });
     listen(handle, 'pointermove', (event: PointerEvent) => {
@@ -141,8 +150,8 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
     listen(handle, 'dblclick', () => { setWidth(side, limits[side].initial, resizeBase()); save(); });
     listen(handle, 'keydown', (event: KeyboardEvent) => {
       if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return;
-      event.preventDefault(); const base = resizeBase(), key = side === 'left' ? 'leftWidth' : 'rightWidth';
-      setWidth(side, event.key === 'Home' ? limits[side].initial : base[key] + (event.key === 'ArrowRight' ? 16 : -16) * (side === 'left' ? 1 : -1), base); save();
+      event.preventDefault(); const base = resizeBase();
+      setWidth(side, event.key === 'Home' ? limits[side].initial : fitted()[side] + (event.key === 'ArrowRight' ? 16 : -16) * (side === 'left' ? 1 : -1), base); save();
     });
   }
   listen(root, 'pointerdown', (event: PointerEvent) => {
@@ -162,8 +171,10 @@ export function attachColumnLayout(root: HTMLElement, initial: ColumnPreferences
   let previousWidth = measured();
   const observer = typeof win.ResizeObserver === 'function' ? new win.ResizeObserver(() => {
     const width = measured();
-    if (width !== previousWidth) { previousWidth = width; endDrag(false); apply(); }
+    if (width !== previousWidth) { previousWidth = width; endDrag(false); }
+    apply();
   }) : undefined;
+  listen(win, 'resize', () => { endDrag(false); apply(); });
   observer?.observe(root); apply();
   return {
     update(value) { endDrag(false); preferences = normalizeColumnPreferences(value); apply(); },

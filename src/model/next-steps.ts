@@ -20,7 +20,7 @@ function sourceLines(note: Note): SourceLine[] {
   const lines: SourceLine[] = [];
   let fence = '';
   for (const [index, text] of body.split(/\r?\n/).entries()) {
-    const marker = text.match(/^ {0,3}(\x60{3,}|~{3,})(.*)$/);
+    const marker = text.match(/^[ \t]*(\x60{3,}|~{3,})(.*)$/);
     if (fence) {
       if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = '';
       continue;
@@ -43,7 +43,7 @@ function parseSteps(lines: SourceLine[]): NextStepReading {
     if (item) {
       items.push({ text: item[3].trim(), ...(item[2] === undefined ? {} : { completed: item[2].toLowerCase() === 'x' }), depth: Math.floor(item[1].replace(/\t/g, '    ').length / 2), line: source.line });
       continuation = true;
-    } else if (continuation && /^[ \t]+\S/.test(source.text) && !source.heading && items.length) {
+    } else if (continuation && source.text.trim() && !source.heading && items.length) {
       items[items.length - 1].text += ' ' + source.text.trim();
     } else if (!source.text.trim() || source.heading) continuation = false;
   }

@@ -50,6 +50,29 @@ describe('adjustable workbench columns', () => {
     pointer('pointerdown',100);pointer('pointermove',120);controller.dispose();pointer('pointerup',120);
     expect(save).toHaveBeenCalledTimes(1);
   });
+  it('restores the original preference when a rendered drag returns to its starting point', () => {
+    const {root,browser}=surface();const save=vi.fn();const frames:FrameRequestCallback[]=[];
+    vi.spyOn(window,'requestAnimationFrame').mockImplementation(callback=>{frames.push(callback);return frames.length;});
+    const controller=attachColumnLayout(root,normalizeColumnPreferences(),save);
+    const handle=root.querySelector<HTMLElement>('[data-column-resize="left"]')!;
+    const pointer=(type:string,x:number)=>handle.dispatchEvent(new browser.PointerEvent(type,{clientX:x,button:0,pointerId:1,bubbles:true}) as unknown as Event);
+    pointer('pointerdown',100);pointer('pointermove',180);frames.shift()!(0);
+    expect(root.style.getPropertyValue('--rw-left-width')).toBe('300px');
+    pointer('pointermove',100);pointer('pointerup',100);
+    expect(root.style.getPropertyValue('--rw-left-width')).toBe('220px');expect(save).not.toHaveBeenCalled();controller.dispose();
+  });
+  it.each(['left','right'] as const)('preserves the other requested width when resizing %s in a constrained pane',side=>{
+    const {root,browser,resize}=surface();resize(840);const save=vi.fn();
+    const controller=attachColumnLayout(root,normalizeColumnPreferences({leftWidth:360,rightWidth:480}),save);
+    const handle=root.querySelector<HTMLElement>('[data-column-resize="'+side+'"]')!;
+    const before=parseFloat(root.style.getPropertyValue('--rw-'+side+'-width'));
+    handle.dispatchEvent(new browser.KeyboardEvent('keydown',{key:side==='left'?'ArrowLeft':'ArrowRight',bubbles:true}) as unknown as Event);
+    const saved=save.mock.lastCall![0];
+    expect(saved[side==='left'?'rightWidth':'leftWidth']).toBe(side==='left'?480:360);
+    expect(parseFloat(root.style.getPropertyValue('--rw-'+side+'-width'))).toBeCloseTo(before-16);
+    const wide=fitColumns(1440,saved,true);
+    expect(wide[side==='left'?'right':'left']).toBe(side==='left'?480:360);controller.dispose();
+  });
   it('uses one narrow drawer, closes with Escape or an outside tap, and restores focus', () => {
     const {root,browser,resize,button}=surface();resize(390);const save=vi.fn();
     const controller=attachColumnLayout(root,normalizeColumnPreferences(),save);

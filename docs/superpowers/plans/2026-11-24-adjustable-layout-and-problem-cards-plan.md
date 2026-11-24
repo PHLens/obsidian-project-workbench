@@ -58,7 +58,7 @@
 
 **Interfaces**
 
-- Produce ColumnPreferences { leftWidth: number; rightWidth: number; leftCollapsed: boolean; rightCollapsed: boolean; focusMode: boolean }.
+- Produce ColumnPreferences { leftWidth: number; rightWidth: number; leftCollapsed: boolean; rightCollapsed: boolean; focusMode: boolean; preferredSide?: 'left' | 'right' }. The last explicitly resized side receives priority when constraining effective widths.
 - Produce normalizeColumnPreferences(value: unknown): ColumnPreferences and fitColumns(width: number, preferences: ColumnPreferences, hasRight: boolean): { left: number; right: number; narrow: boolean }.
 - Defaults are left 220px, right 300px, both visible, focus mode off. Start with side limits 150–360px and 190–480px, 360px central minimum, 8px separators, and an 840px narrow threshold.
 - Produce attachColumnLayout(root: HTMLElement, preferences: ColumnPreferences, commit: (value: ColumnPreferences) => void): { update(value: ColumnPreferences): void; dispose(): void }.
@@ -111,6 +111,6 @@
 - [x] Update README and generic fixtures with several checklist states and ordinary Next Step entries.
 - [x] Run npm run check and synchronize the desktop/mobile fixture bundles. Run scripts/check-device-configs.mjs --vault test-vault and git diff --check. Expect passing tests/build and identical bundles.
 - [x] Exercise actual components in a browser at wide, split-pane, 390px, and 320px widths with enlarged fonts. Check both separators, drawers, selection, expansion, and action containment.
-- [ ] Run one fresh whole-branch review covering the Review Focus cases. Address material findings with regression tests and a green full suite.
+- [x] Run one fresh whole-branch review covering the Review Focus cases. Address material findings with regression tests and a green full suite.
 - [ ] Preserve verification evidence outside the plan scratch directory. Back up the local plugin, install only its runtime assets into both authorized configurations, and verify hashes against a vault baseline.
 - [ ] Commit the final documentation/fixtures, record the verified state, and remove only this plan's completed scratch directory.

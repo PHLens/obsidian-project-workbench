@@ -6524,7 +6524,7 @@ function sourceLines(note) {
   const lines = [];
   let fence = "";
   for (const [index, text] of body.split(/\r?\n/).entries()) {
-    const marker = text.match(/^ {0,3}(\x60{3,}|~{3,})(.*)$/);
+    const marker = text.match(/^[ \t]*(\x60{3,}|~{3,})(.*)$/);
     if (fence) {
       if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
       continue;
@@ -6549,7 +6549,7 @@ function parseSteps(lines) {
     if (item) {
       items.push({ text: item[3].trim(), ...item[2] === void 0 ? {} : { completed: item[2].toLowerCase() === "x" }, depth: Math.floor(item[1].replace(/\t/g, "    ").length / 2), line: source2.line });
       continuation = true;
-    } else if (continuation && /^[ \t]+\S/.test(source2.text) && !source2.heading && items.length) {
+    } else if (continuation && source2.text.trim() && !source2.heading && items.length) {
       items[items.length - 1].text += " " + source2.text.trim();
     } else if (!source2.text.trim() || source2.heading) continuation = false;
   }
@@ -8219,7 +8219,14 @@ function normalizeColumnPreferences(value) {
     const value2 = input[side + "Width"];
     return typeof value2 === "number" && Number.isFinite(value2) ? Math.max(limits[side].min, Math.min(limits[side].max, value2)) : limits[side].initial;
   };
-  return { leftWidth: width("left"), rightWidth: width("right"), leftCollapsed: input.leftCollapsed === true, rightCollapsed: input.rightCollapsed === true, focusMode: input.focusMode === true };
+  return {
+    leftWidth: width("left"),
+    rightWidth: width("right"),
+    leftCollapsed: input.leftCollapsed === true,
+    rightCollapsed: input.rightCollapsed === true,
+    focusMode: input.focusMode === true,
+    ...input.preferredSide === "left" || input.preferredSide === "right" ? { preferredSide: input.preferredSide } : {}
+  };
 }
 function fitColumns(width, preferences, hasRight) {
   if (width < 840) return { left: 0, right: 0, narrow: true };
@@ -8228,9 +8235,17 @@ function fitColumns(width, preferences, hasRight) {
   const budget = width - 360 - (left ? 8 : 0) - (right ? 8 : 0);
   if (left + right > budget) {
     const leftMin = left ? limits.left.min : 0, rightMin = right ? limits.right.min : 0;
-    const scale = Math.max(0, (budget - leftMin - rightMin) / Math.max(1, left + right - leftMin - rightMin));
-    left = leftMin + (left ? left - leftMin : 0) * scale;
-    right = rightMin + (right ? right - rightMin : 0) * scale;
+    if (preferences.preferredSide === "left" && left) {
+      left = Math.min(left, budget - rightMin);
+      right = Math.min(right, budget - left);
+    } else if (preferences.preferredSide === "right" && right) {
+      right = Math.min(right, budget - leftMin);
+      left = Math.min(left, budget - right);
+    } else {
+      const scale = Math.max(0, (budget - leftMin - rightMin) / Math.max(1, left + right - leftMin - rightMin));
+      left = leftMin + (left ? left - leftMin : 0) * scale;
+      right = rightMin + (right ? right - rightMin : 0) * scale;
+    }
   }
   return { left, right, narrow: false };
 }
@@ -8274,6 +8289,7 @@ function attachColumnLayout(root, initial, commit) {
     root.style.setProperty("--rw-right-width", geometry.right + "px");
     root.style.setProperty("--rw-left-grip", geometry.left ? "8px" : "0px");
     root.style.setProperty("--rw-right-grip", geometry.right ? "8px" : "0px");
+    root.style.setProperty("--rw-drawer-height", Math.max(120, win.innerHeight - Math.max(0, layout.getBoundingClientRect().top) - 12) + "px");
     for (const side of ["left", "right"]) {
       const panel = panels[side], visible = geometry.narrow ? drawer === side : geometry[side] > 0;
       if (panel) {
@@ -8299,8 +8315,10 @@ function attachColumnLayout(root, initial, commit) {
         handle.setAttribute("role", "separator");
         handle.setAttribute("aria-orientation", "vertical");
         handle.setAttribute("aria-label", side === "left" ? "\u8C03\u6574\u5BFC\u822A\u680F\u5BBD\u5EA6" : "\u8C03\u6574\u6982\u89C8\u680F\u5BBD\u5EA6");
+        const other = side === "left" ? "right" : "left";
+        const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - (geometry[other] ? limits[other].min : 0));
         handle.setAttribute("aria-valuemin", String(limits[side].min));
-        handle.setAttribute("aria-valuemax", String(limits[side].max));
+        handle.setAttribute("aria-valuemax", String(Math.max(limits[side].min, Math.floor(maximum))));
         handle.setAttribute("aria-valuenow", String(Math.round(geometry[side])));
       }
     }
@@ -8328,13 +8346,12 @@ function attachColumnLayout(root, initial, commit) {
     }
   }
   function resizeBase() {
-    const geometry = fitted();
-    return { ...preferences, leftWidth: geometry.left || preferences.leftWidth, rightWidth: geometry.right || preferences.rightWidth };
+    return { ...preferences };
   }
   function setWidth(side, value, base) {
     const geometry = fitColumns(measured(), base, !!rail), other = side === "left" ? "right" : "left";
-    const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - geometry[other]);
-    preferences = { ...base, [side + "Width"]: Math.max(limits[side].min, Math.min(maximum, value)) };
+    const maximum = Math.min(limits[side].max, measured() - 360 - (geometry.left ? 8 : 0) - (geometry.right ? 8 : 0) - (geometry[other] ? limits[other].min : 0));
+    preferences = { ...base, [side + "Width"]: Math.max(limits[side].min, Math.min(maximum, value)), preferredSide: side };
     apply();
   }
   function flushDrag() {
@@ -8342,9 +8359,15 @@ function attachColumnLayout(root, initial, commit) {
       win.cancelAnimationFrame(frame);
       frame = void 0;
     }
-    if (!drag || disposed || drag.lastX === drag.startX) return;
-    setWidth(drag.side, drag.base[drag.side === "left" ? "leftWidth" : "rightWidth"] + (drag.lastX - drag.startX) * (drag.side === "left" ? 1 : -1), drag.base);
-    drag.changed = true;
+    if (!drag || disposed) return;
+    if (drag.lastX === drag.startX) {
+      preferences = { ...drag.base };
+      apply();
+      drag.changed = false;
+      return;
+    }
+    setWidth(drag.side, drag.startWidth + (drag.lastX - drag.startX) * (drag.side === "left" ? 1 : -1), drag.base);
+    drag.changed = JSON.stringify(preferences) !== JSON.stringify(drag.base);
   }
   function endDrag(persist) {
     if (!drag) return;
@@ -8374,7 +8397,7 @@ function attachColumnLayout(root, initial, commit) {
     listen(handle, "pointerdown", (event) => {
       if (event.button !== 0 || fitted().narrow || disposed) return;
       endDrag(false);
-      drag = { side, pointer: event.pointerId, startX: event.clientX, lastX: event.clientX, base: resizeBase(), target: handle, changed: false };
+      drag = { side, pointer: event.pointerId, startX: event.clientX, lastX: event.clientX, startWidth: fitted()[side], base: resizeBase(), target: handle, changed: false };
       handle.setPointerCapture?.(event.pointerId);
       root.classList.add("rw-resizing-columns");
       event.preventDefault();
@@ -8397,8 +8420,8 @@ function attachColumnLayout(root, initial, commit) {
     listen(handle, "keydown", (event) => {
       if (!["ArrowLeft", "ArrowRight", "Home"].includes(event.key)) return;
       event.preventDefault();
-      const base = resizeBase(), key = side === "left" ? "leftWidth" : "rightWidth";
-      setWidth(side, event.key === "Home" ? limits[side].initial : base[key] + (event.key === "ArrowRight" ? 16 : -16) * (side === "left" ? 1 : -1), base);
+      const base = resizeBase();
+      setWidth(side, event.key === "Home" ? limits[side].initial : fitted()[side] + (event.key === "ArrowRight" ? 16 : -16) * (side === "left" ? 1 : -1), base);
       save();
     });
   }
@@ -8430,9 +8453,13 @@ function attachColumnLayout(root, initial, commit) {
     if (width !== previousWidth) {
       previousWidth = width;
       endDrag(false);
-      apply();
     }
+    apply();
   }) : void 0;
+  listen(win, "resize", () => {
+    endDrag(false);
+    apply();
+  });
   observer?.observe(root);
   apply();
   return {

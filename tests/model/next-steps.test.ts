@@ -39,6 +39,17 @@ describe('Next Step source previews', () => {
       { text: 'Final action', completed: undefined, depth: 0 },
     ]);
   });
+  it('excludes fenced examples nested inside a list container',()=>{
+    const p=snapshot('# Q\n\n## Next Step\n\n- [ ] Real parent\n    ~~~md\n    - [x] Example only\n    ## Fake boundary\n    ~~~\n- [ ] Real sibling').problems[0];
+    expect(p.nextSteps).toEqual(['Real parent','Real sibling']);
+    expect(p.nextStepItems?.map(item=>item.completed)).toEqual([false,false]);
+  });
+  it('keeps lazy continuation text searchable without absorbing a later prose paragraph',()=>{
+    const s=snapshot('# Q\n\n## Next Step\n\n- [ ] Run the experiment\nusing the larger dataset\n\nSeparate prose.\n\n- [ ] Review the results');
+    expect(s.problems[0].nextSteps).toEqual(['Run the experiment using the larger dataset','Review the results']);
+    expect(filterWorkbenchItems(s,'larger dataset').problems).toHaveLength(1);
+    expect(filterWorkbenchItems(s,'Separate prose').problems).toHaveLength(0);
+  });
   it.each(['## 下一步', '## NEXT STEP', '## Next Steps'])('supports %s with CRLF and no following section', heading => {
     const p = snapshot(('# Q\n\n' + heading + '\n\n* [ ] One\n+ [x] Two').replaceAll('\n', '\r\n')).problems[0];
     expect(p.nextSteps).toEqual(['One', 'Two']);
