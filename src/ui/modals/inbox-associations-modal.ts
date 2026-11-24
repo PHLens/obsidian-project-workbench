@@ -5,7 +5,8 @@ export class InboxAssociationsModal extends Modal {
   private saving = false;
   close(): void { if (!this.saving) super.close(); }
   constructor(app: App, private readonly initial: InboxAssociations, private readonly candidates: { projects: AssociationCandidate[]; problems: AssociationCandidate[] }, private readonly submit: (links: InboxAssociations) => Promise<void>, private readonly options: { onClose?: () => void } = {}) { super(app); }
-  onOpen(): void {
+  onOpen(): void { this.contentEl.addClass('rw-modal-form');
+    this.contentEl.addClass('rw-associations-modal');
     this.titleEl.setText('关联项目与研究问题');
     this.contentEl.createEl('p', { cls: 'rw-muted', text: '可以选择多项；关联关系与价值确认状态独立。' });
     const projects = createAssociationPicker(this.contentEl, { label: '项目', candidates: this.candidates.projects, selected: this.initial.projects });

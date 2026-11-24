@@ -10,7 +10,8 @@ export class InboxCaptureModal extends Modal {
   private saving = false;
   close(): void { if (!this.saving) super.close(); }
   constructor(app: App, private readonly options: InboxCaptureOptions) { super(app); }
-  onOpen(): void {
+  onOpen(): void { this.contentEl.addClass('rw-modal-form');
+    this.contentEl.addClass('rw-capture-modal');
     this.titleEl.setText(this.options.mode === 'reference' ? '引用已有笔记' : '新增资料');
     const form = this.contentEl;
     const title = createModalField(form, { key: 'captureTitle', control: 'input', required: true }).input as HTMLInputElement; title.name = 'title';

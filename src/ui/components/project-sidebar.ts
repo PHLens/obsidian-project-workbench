@@ -11,7 +11,7 @@ export function renderProjectSidebar(container: HTMLElement, projects: ProjectSu
   for (const project of projects) {
     const button = projectGroup.createEl('button', { cls: `rw-project-choice ${project.path === state.projectPath ? 'is-active' : ''}` });
     const projectIcon = button.createSpan({ cls: 'rw-project-choice-icon' }); renderIcon(projectIcon, 'network');
-    button.createSpan({ cls: 'rw-project-choice-name', text: project.title });
+    button.createSpan({ cls: 'rw-project-choice-name', text: project.title, attr: { title: project.title } });
     button.createSpan({ cls: 'rw-project-choice-arrow', text: '›' });
     button.onclick = () => actions.selectProject(project.path);
     button.oncontextmenu = (event) => { event.preventDefault(); event.stopPropagation(); actions.projectContextMenu(project.path, event); };

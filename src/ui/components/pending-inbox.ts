@@ -8,11 +8,12 @@ export function renderPendingInbox(container: HTMLElement, inputs: PendingInputS
   card.createEl('small', { text: `${inputs.length} 条当前项目待处理资料` });
   for (const input of inputs.slice(0, 3)) {
     const row = card.createDiv({ cls: 'rw-inbox-item-wrap' });
-    row.createEl('button', { cls: 'rw-inbox-item', text: input.title }).onclick = () => actions.openPending(input);
+    row.createEl('button', { cls: 'rw-inbox-item', text: input.title, attr: { title: input.title } }).onclick = () => actions.openPending(input);
     const complete = row.createEl('button', { cls: 'rw-inbox-mini-action', text: '标为已处理' });
     complete.title = '价值已确认并整理，可作为 source 溯源'; complete.onclick = () => actions.transitionPending(input, 'processed');
   }
-  card.createEl('button', { cls: 'rw-link-button', text: '＋ 新增资料' }).onclick = () => actions.recordIdea();
-  card.createEl('button', { cls: 'rw-link-button', text: '打开收件箱' }).onclick = actions.openInbox;
+  const footer = card.createDiv({ cls: 'rw-card-actions', attr: { role: 'group', 'aria-label': '收件箱操作' } });
+  footer.createEl('button', { cls: 'rw-link-button', text: '＋ 新增资料' }).onclick = () => actions.recordIdea();
+  footer.createEl('button', { cls: 'rw-link-button', text: '打开收件箱' }).onclick = actions.openInbox;
   return card;
 }
