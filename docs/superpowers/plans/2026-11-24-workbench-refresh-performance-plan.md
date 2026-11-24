@@ -24,9 +24,9 @@
 
 ## Task 2: Refresh lifecycle and interaction
 
-- [ ] Add failing trailing-debounce/max-delay, hidden-view, close/reopen, and search-caret tests.
-- [ ] Coalesce event bursts, clean subscriptions on close, defer invisible-view refreshes, and preserve search focus/selection and scroll.
-- [ ] Run type checking, UI/model tests, and the full suite; commit the tested refresh changes.
+- [x] Add failing trailing-debounce/max-delay, hidden-view, close/reopen, and search-caret tests.
+- [x] Coalesce event bursts, clean subscriptions on close, defer invisible-view refreshes, and preserve search focus/selection and scroll.
+- [x] Run type checking, UI/model tests, and the full suite; commit the tested refresh changes.
 
 ## Task 3: Validation and local testing
 

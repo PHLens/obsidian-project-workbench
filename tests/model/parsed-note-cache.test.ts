@@ -4,7 +4,7 @@ vi.mock('yaml', async (importOriginal) => {
   return { ...original, parse: vi.fn(original.parse) };
 });
 import { parse } from 'yaml';
-import { parseNote } from '../../src/model/frontmatter';
+import { parseNote, primeParsedNotes } from '../../src/model/frontmatter';
 import { buildProjectIndex, buildProjectSnapshot } from '../../src/model/project-snapshot';
 const file = (path: string, fields: string, body = '') => ({ path, content: `---\n${fields}\n---\n${body}`, mtime: 1 });
 beforeEach(() => { vi.mocked(parse).mockClear(); });
@@ -31,4 +31,18 @@ describe('parsed note reuse', () => {
     expect(() => buildProjectIndex(files,{projectDirectories:['Projects']})).not.toThrow();
     expect(parse).toHaveBeenCalledTimes(1);
   });
+  it('yields during cold priming but performs no decode or yield for an unchanged cache', async () => {
+    const files=Array.from({length:70},(_,index)=>file(`Notes/${index}.md`,'type: note','# Content'));
+    const yieldControl=vi.fn(async()=>{});
+    expect(await primeParsedNotes(files,()=>true,yieldControl)).toBe(true); expect(yieldControl.mock.calls.length).toBeGreaterThan(0);
+    vi.mocked(parse).mockClear(); yieldControl.mockClear();
+    expect(await primeParsedNotes(files,()=>true,yieldControl)).toBe(true); expect(parse).not.toHaveBeenCalled(); expect(yieldControl).not.toHaveBeenCalled();
+  });
+  it('stops cold priming when the view becomes unavailable at a yield boundary', async () => {
+    const files=Array.from({length:70},(_,index)=>file(`Notes/${index}.md`,'type: note','# Content'));
+    let active=true;
+    expect(await primeParsedNotes(files,()=>active,async()=>{active=false;})).toBe(false);
+    expect(vi.mocked(parse).mock.calls.length).toBeGreaterThan(0); expect(vi.mocked(parse).mock.calls.length).toBeLessThan(files.length);
+  });
+
 });

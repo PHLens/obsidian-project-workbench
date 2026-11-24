@@ -71,6 +71,22 @@ export function getWorkbenchLayoutState(context: WorkbenchRenderContext): Workbe
     problemRows: (context.snapshot?.problems ?? []).map((problem) => ({ title: problem.title, status: problem.status, focus: problem.focus, source: problem.source.kind })), emptyProblemState: !context.snapshot?.problems.length };
 }
 export function renderWorkbench(container: HTMLElement, context: WorkbenchRenderContext, actions: WorkbenchActions): HTMLElement {
+  const active = container.ownerDocument.activeElement;
+  const search = active && container.contains(active) && active.matches('input.rw-search') ? active as HTMLInputElement : null;
+  const selection = search ? { start: search.selectionStart, end: search.selectionEnd, direction: search.selectionDirection } : null;
+  const scrollTop = container.scrollTop;
+  const result = renderWorkbenchContents(container, context, actions);
+  container.scrollTop = scrollTop;
+  if (selection) {
+    const replacement = container.querySelector<HTMLInputElement>('input.rw-search');
+    if (replacement) {
+      replacement.focus({ preventScroll: true });
+      if (selection.start !== null && selection.end !== null) replacement.setSelectionRange(selection.start, selection.end, selection.direction ?? undefined);
+    }
+  }
+  return result;
+}
+function renderWorkbenchContents(container: HTMLElement, context: WorkbenchRenderContext, actions: WorkbenchActions): HTMLElement {
   container.empty();
   const root = container.createDiv({ cls: `research-workbench rw-shell rw-density-${context.state.density}` }); root.dataset.panel = context.state.panel;
   renderMainHeader(root, context, actions);

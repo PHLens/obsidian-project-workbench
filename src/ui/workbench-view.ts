@@ -1,6 +1,6 @@
-import { ItemView, Notice, TFile, WorkspaceLeaf, Menu, ConfirmationModal } from 'obsidian';
+import { ItemView, Notice, TFile, WorkspaceLeaf, Menu, ConfirmationModal, type EventRef } from 'obsidian';
 import { buildProjectIndex, buildProjectSnapshot, buildTimelineEvents } from '../model/project-snapshot';
-import { parseNote, parseNotes, titleFor } from '../model/frontmatter';
+import { parseNote, parseNotes, primeParsedNotes, titleFor } from '../model/frontmatter';
 import { buildInboxIndex, resolveAssociationPath, stringLinks, type InboxEntry, type InboxStatus } from '../model/inbox';
 import type { ProjectSnapshot, ProjectSummary, TimelineEvent, VaultFile } from '../model/types';
 import { DEFAULT_WORKBENCH_STATE, type WorkbenchViewState } from '../model/view-state';
@@ -39,29 +39,56 @@ export class ResearchWorkbenchView extends ItemView {
   private queryRenderTimer: ReturnType<typeof setTimeout> | undefined;
   private closePropertyEditor: (() => void) | undefined;
   private disposed = false;
+  private opened = false;
+  private lifecycleVersion = 0;
+  private renderPending = false;
+  private readonly eventDisposers: Array<() => void> = [];
+  private readonly workbenchLeaf: WorkspaceLeaf;
   private projectPath = '';
   private state: WorkbenchViewState = { ...DEFAULT_WORKBENCH_STATE, projectPath: this.projectPath };
-  constructor(leaf: WorkspaceLeaf, dataScope: Partial<WorkbenchDataScope> = {}) { super(leaf); this.dataScope = resolveDataScope(dataScope); }
+  constructor(leaf: WorkspaceLeaf, dataScope: Partial<WorkbenchDataScope> = {}) { super(leaf); this.workbenchLeaf = leaf; this.dataScope = resolveDataScope(dataScope); }
   getViewType(): string { return VIEW_TYPE_RESEARCH_WORKBENCH; }
   getDisplayText(): string { return 'Project Workbench'; }
   getIcon(): string { return 'layout-dashboard'; }
   async onOpen(): Promise<void> {
-    this.disposed = false;
-    this.refreshScheduler = createRefreshScheduler(() => { if (this.dirtyPaths.size) void this.refresh(); });
+    if (this.opened) return;
+    this.opened = true; this.disposed = false; this.lifecycleVersion++;
+    this.refreshScheduler = createRefreshScheduler(() => { if (this.dirtyPaths.size && this.isViewVisible()) void this.refresh(); });
     const changed = (path: string) => {
+      if (this.disposed) return;
       const directories = allDataDirectories(this.dataScope);
       if (isPathInDirectories(path, directories) || directories.some((directory) => directory.startsWith(`${path}/`))) {
         this.dirtyPaths.add(path); this.refreshScheduler?.request();
       }
     };
-    this.registerEvent(this.app.vault.on('modify', (file) => { if (file.path.endsWith('.md')) changed(file.path); }));
-    this.registerEvent(this.app.vault.on('create', (file) => changed(file.path)));
-    this.registerEvent(this.app.vault.on('delete', (file) => changed(file.path)));
-    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => { changed(oldPath); changed(file.path); }));
+    this.watch(this.app.vault.on('modify', (file) => { if (file.path.endsWith('.md')) changed(file.path); }), this.app.vault);
+    this.watch(this.app.vault.on('create', (file) => changed(file.path)), this.app.vault);
+    this.watch(this.app.vault.on('delete', (file) => changed(file.path)), this.app.vault);
+    this.watch(this.app.vault.on('rename', (file, oldPath) => { changed(oldPath); changed(file.path); }), this.app.vault);
+    const catchUp = () => {
+      if (this.disposed || this.refreshTask || (!this.dirtyPaths.size && !this.renderPending) || !this.isViewVisible()) return;
+      void this.refresh();
+    };
+    if (typeof this.app.workspace?.on === 'function') {
+      this.watch(this.app.workspace.on('active-leaf-change', (leaf) => { if (leaf === this.workbenchLeaf) catchUp(); }), this.app.workspace);
+      this.watch(this.app.workspace.on('layout-change', catchUp), this.app.workspace);
+    }
+    const doc = this.contentEl?.ownerDocument;
+    if (doc) { doc.addEventListener('visibilitychange', catchUp); this.eventDisposers.push(() => doc.removeEventListener('visibilitychange', catchUp)); }
     await this.refresh();
   }
+  private watch(ref: EventRef, source: { offref?: (ref: EventRef) => void }): void { this.eventDisposers.push(() => source.offref?.(ref)); }
+  private isViewVisible(): boolean {
+    const element = this.containerEl ?? this.contentEl;
+    if (element?.ownerDocument?.hidden) return false;
+    return typeof element?.isShown === 'function' ? element.isShown() : true;
+  }
+  async onClose(): Promise<void> { this.onunload(); }
   onunload(): void {
-    this.disposed = true; this.refreshScheduler?.dispose(); this.closePropertyEditor?.();
+    this.disposed = true; this.lifecycleVersion++; this.refreshTask = null; this.refreshPending = false;
+    this.opened = false;
+    this.eventDisposers.splice(0).forEach((dispose) => dispose());
+    this.refreshScheduler?.dispose(); this.closePropertyEditor?.();
     if (this.queryRenderTimer !== undefined) clearTimeout(this.queryRenderTimer);
     this.queryRenderTimer = undefined;
   }
@@ -76,25 +103,35 @@ export class ResearchWorkbenchView extends ItemView {
     if (!directory) throw new Error(`请先在插件设置中配置${labels[key]}目录。`);
     return directory;
   }
-  private async files(): Promise<VaultFile[]> {
+  private async files(generation = this.lifecycleVersion): Promise<VaultFile[]> {
     const directories = allDataDirectories(this.dataScope);
     const files = this.app.vault.getMarkdownFiles().filter((file) => isPathInDirectories(file.path, directories));
     const forced = new Set(this.dirtyPaths); this.dirtyPaths.clear();
-    return this.fileCache.load(files, (file) => this.app.vault.read(file), forced);
+    return this.fileCache.load(files, (file) => this.app.vault.read(file), forced, () => !this.disposed && generation === this.lifecycleVersion);
   }
   async refresh(): Promise<void> {
     if (this.disposed) return;
     if (this.refreshTask) { this.refreshPending = true; return this.refreshTask; }
-    this.refreshTask = this.loadAndRender();
-    try { await this.refreshTask; } catch (error) { new Notice(String(error)); }
-    finally { this.refreshTask = null; }
+    const generation = this.lifecycleVersion;
+    const task = this.loadAndRender(generation); this.refreshTask = task;
+    try { await task; } catch (error) { if (!this.disposed && generation === this.lifecycleVersion) new Notice(String(error)); }
+    finally {
+      if (this.refreshTask === task) {
+        this.refreshTask = null;
+        if (!this.disposed && generation === this.lifecycleVersion && (this.dirtyPaths.size || this.refreshPending)) this.refreshScheduler?.request();
+      }
+    }
   }
-  private async loadAndRender(): Promise<void> {
+  private async loadAndRender(generation: number): Promise<void> {
     do {
       this.refreshPending = false;
-      const files = await this.files(); if (this.disposed) return;
-      this.cachedFiles = files; this.rebuildCachedSnapshot(); this.render();
-    } while (!this.disposed && (this.refreshPending || this.dirtyPaths.size));
+      const files = await this.files(generation); if (this.disposed || generation !== this.lifecycleVersion) return;
+      this.cachedFiles = files;
+      if (!this.isViewVisible()) { this.renderPending = true; return; }
+      const ready = await primeParsedNotes(files, () => !this.disposed && generation === this.lifecycleVersion && this.isViewVisible());
+      if (!ready) { if (!this.disposed && generation === this.lifecycleVersion) this.renderPending = true; return; }
+      this.rebuildCachedSnapshot(); this.render();
+    } while (!this.disposed && generation === this.lifecycleVersion && this.refreshPending);
   }
   private async refreshAffected(...paths: string[]): Promise<void> { paths.forEach((path) => this.dirtyPaths.add(path)); await this.refresh(); }
   private rebuildCachedSnapshot(): void {
@@ -154,6 +191,8 @@ export class ResearchWorkbenchView extends ItemView {
   private viewMaterial(kind: 'project' | 'problem', path: string): void { this.state.panel = 'inbox'; this.state.inboxAssociation = path ? { kind, path } : null; this.state.inboxView = 'all'; this.renderCurrent(); }
   private renderCurrent(): void { if (this.cachedFiles && !this.disposed) this.render(); }
   private render(): void {
+    if (!this.isViewVisible()) { this.renderPending = true; return; }
+    this.renderPending = false;
     let inboxProblemPaths: string[] = [];
     const association = this.state.inboxAssociation;
     if (association?.kind === 'project' && this.cachedFiles && this.cachedProjects.some((project) => project.path === association.path)) inboxProblemPaths = buildProjectSnapshot(this.cachedFiles, association.path, { includeArchived: true, ...this.dataScope }).problems.map((problem) => problem.path);

@@ -25,4 +25,19 @@ describe('scoped file content cache', () => {
     await cache.load(files, read);
     expect(read.mock.calls.map(([file]) => file.path)).toEqual(['Inputs/B.md']);
   });
+  it('stops a cancelled load after its current read and does not cache the late result', async () => {
+    const cache=new ScopedFileCache(); const files=[{path:'Inputs/A.md',stat:{mtime:1}},{path:'Inputs/B.md',stat:{mtime:1}}];
+    let finish:(text:string)=>void=()=>{}; const pending=new Promise<string>(resolve=>{finish=resolve;});
+    const read=vi.fn(async(file:{path:string})=>file.path); read.mockImplementationOnce(()=>pending);
+    let active=true; const loading=cache.load(files,read,new Set(),()=>active); active=false; finish('old'); await loading;
+    expect(read).toHaveBeenCalledTimes(1); read.mockClear(); await cache.load(files,read);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('retains the parsed-content identity when only file metadata changes', async () => {
+    const cache=new ScopedFileCache();const files=[{path:'Inputs/A.md',stat:{mtime:1,size:4}}];const read=vi.fn(async()=> 'body');
+    const first=(await cache.load(files,read))[0];files[0].stat.mtime=2;const second=(await cache.load(files,read))[0];
+    expect(second).toBe(first);expect(second.mtime).toBe(2);
+  });
+
 });

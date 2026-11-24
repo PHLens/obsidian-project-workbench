@@ -29,3 +29,18 @@ export function titleFor(note: Note): string {
 export function firstHeading(note: Note): string | undefined {
   return note.body?.match(/^#\s+(.+)$/m)?.[1]?.trim();
 }
+
+export async function primeParsedNotes(files: VaultFile[], keepGoing: () => boolean = () => true, yieldControl: () => Promise<void> = () => new Promise((resolve) => setTimeout(resolve, 0))): Promise<boolean> {
+  if (!keepGoing()) return false;
+  let decoded = 0;
+  for (const file of files) {
+    const uncached = parsedNotes.get(file)?.content !== file.content;
+    if (uncached && decoded >= 24) {
+      await yieldControl(); decoded = 0;
+      if (!keepGoing()) return false;
+    }
+    parseNote(file);
+    if (uncached) decoded++;
+  }
+  return keepGoing();
+}
