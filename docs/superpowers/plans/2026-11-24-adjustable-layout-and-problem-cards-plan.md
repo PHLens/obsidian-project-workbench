@@ -112,5 +112,5 @@
 - [x] Run npm run check and synchronize the desktop/mobile fixture bundles. Run scripts/check-device-configs.mjs --vault test-vault and git diff --check. Expect passing tests/build and identical bundles.
 - [x] Exercise actual components in a browser at wide, split-pane, 390px, and 320px widths with enlarged fonts. Check both separators, drawers, selection, expansion, and action containment.
 - [x] Run one fresh whole-branch review covering the Review Focus cases. Address material findings with regression tests and a green full suite.
-- [ ] Preserve verification evidence outside the plan scratch directory. Back up the local plugin, install only its runtime assets into both authorized configurations, and verify hashes against a vault baseline.
-- [ ] Commit the final documentation/fixtures, record the verified state, and remove only this plan's completed scratch directory.
+- [x] Preserve verification evidence outside the plan scratch directory. Back up the local plugin, install only its runtime assets into both authorized configurations, and verify hashes against a vault baseline.
+- [x] Commit the final documentation/fixtures, record the verified state, and remove only this plan's completed scratch directory.
