@@ -48,4 +48,24 @@ describe('inline property interactions', () => {
     root.dispatchEvent(new browser.Event('pointerdown', { bubbles: true }) as unknown as Event);
     expect(document.querySelector('[role=dialog]')).toBeNull(); expect(save).not.toHaveBeenCalled();
   });
+  it('selects the last suggestion when ArrowUp starts keyboard navigation', async () => {
+    const { root, browser } = setupDom(); const save = vi.fn(async () => {});
+    openPropertyEditor(root.createEl('button'), { label: '状态', mode: 'single', value: '', choices: ['active', 'exploring', 'investigating'], onSave: save });
+    const input = document.querySelector('input')!;
+    input.dispatchEvent(new browser.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }) as unknown as Event);
+    input.dispatchEvent(new browser.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event); await flushUi();
+    expect(save).toHaveBeenCalledWith('investigating');
+  });
+  it('keeps one editor and freezes controls until an in-flight save finishes', async () => {
+    const { root, browser } = setupDom(); let finish: () => void = () => {};
+    const pending = new Promise<void>((resolve) => { finish = resolve; });
+    openPropertyEditor(root.createEl('button'), { label: '状态', mode: 'single', value: 'active', choices: ['active'], onSave: () => pending });
+    const input = document.querySelector('input')!;
+    input.dispatchEvent(new browser.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event);
+    openPropertyEditor(root.createEl('button'), { label: '阶段', mode: 'single', value: 'analysis', choices: ['analysis'], onSave: async () => {} });
+    expect(document.querySelectorAll('.rw-property-editor')).toHaveLength(1);
+    expect(Array.from(document.querySelectorAll<HTMLButtonElement>('.rw-property-editor button')).every((button) => button.disabled)).toBe(true);
+    finish(); await flushUi(); expect(document.querySelector('.rw-property-editor')).toBeNull();
+  });
+
 });

@@ -4,6 +4,7 @@ const activeEditors = new WeakMap<Document, () => void>();
 export function openPropertyEditor(anchor: HTMLElement, options: EditorOptions): () => void {
   const doc = anchor.ownerDocument; const viewport = doc.defaultView!;
   activeEditors.get(doc)?.();
+  if (activeEditors.has(doc)) return activeEditors.get(doc)!;
   const root = doc.body.createDiv({ cls: `rw-property-editor ${viewport.innerWidth < 700 ? 'is-mobile' : ''}` });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-label', `编辑${options.label}`);
   if (viewport.innerWidth < 700) root.setAttribute('aria-modal', 'true');
@@ -29,9 +30,10 @@ export function openPropertyEditor(anchor: HTMLElement, options: EditorOptions):
   };
   const commit = async (value: PropertyValue) => {
     if (saving || closed) return;
-    saving = true; error.setText(''); save.disabled = true; cancel.disabled = true; input.disabled = true;
+    saving = true; error.setText(''); root.setAttribute('aria-busy', 'true');
+    root.querySelectorAll<HTMLButtonElement>('button').forEach((button) => { button.disabled = true; }); input.disabled = true;
     try { await options.onSave(value); saving = false; close(); }
-    catch (reason) { saving = false; error.setText(reason instanceof Error ? reason.message : String(reason)); save.disabled = false; cancel.disabled = false; input.disabled = false; input.focus(); }
+    catch (reason) { saving = false; root.removeAttribute('aria-busy'); error.setText(reason instanceof Error ? reason.message : String(reason)); root.querySelectorAll<HTMLButtonElement>('button').forEach((button) => { button.disabled = false; }); input.disabled = false; input.focus(); }
   };
   const addTag = (value: string) => { const tag = value.trim().replace(/^#/, ''); if (tag && !tags.includes(tag)) tags.push(tag); input.value = ''; render(); input.focus(); };
   const render = () => {
@@ -62,7 +64,7 @@ export function openPropertyEditor(anchor: HTMLElement, options: EditorOptions):
     }
     if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && options.mode !== 'text') {
       event.preventDefault(); const buttons = Array.from(list.querySelectorAll<HTMLButtonElement>('button'));
-      highlighted = buttons.length ? (highlighted + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length : -1;
+      highlighted = !buttons.length ? -1 : highlighted < 0 ? (event.key === 'ArrowDown' ? 0 : buttons.length - 1) : (highlighted + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
       buttons.forEach((button, index) => button.setAttribute('aria-selected', String(index === highlighted))); return;
     }
     if (event.key === 'Enter' && event.target === input && !event.isComposing) {

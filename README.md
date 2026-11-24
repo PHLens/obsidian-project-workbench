@@ -59,6 +59,16 @@ The workbench reads Markdown only in the configured directories. Search and pane
 
 Settings are stored by Obsidian in `<config-dir>/plugins/research-workbench/data.json`, where `<config-dir>` is the vault's active configuration directory. The same location applies to separate desktop and mobile configuration directories. Keep this file local to the vault; distribute only `main.js`, `manifest.json`, and `styles.css` when updating the plugin. Updates preserve existing settings.
 
+## Inbox capture and direct editing
+
+The Inbox is available before the first project exists. Use **Add material** in the shared header or **New entry** in the Inbox to capture a paper, idea, or note with a title. Project and problem associations are optional during capture and can be added later. Capture from a project or problem starts with that context selected.
+
+Use **Reference existing note** to select a Markdown note from the vault. This creates a reference entry in the configured input directory while preserving the source note. Source directories do not become part of background loading.
+
+Each Inbox entry supports multiple project/problem associations. Association changes preserve its processing state. Pending, processed, and all-item views keep entries accessible after processing. Problem **View material** and the project rail open a filtered Inbox; shared Inbox navigation returns to the global list.
+
+Click problem status, stage, role, or tags to edit that field. Project status, current gate, and next milestone also support direct editing. Pick an existing value or enter a custom one; Escape cancels. Tags support multiple values, and longer goal text uses save/cancel controls. A note changed externally while its editor is open produces a conflict message and preserves the entered value.
+
 ## Build output
 
 `npm run build` produces:

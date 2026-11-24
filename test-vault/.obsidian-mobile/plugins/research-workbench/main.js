@@ -25,10 +25,10 @@ __export(main_exports, {
   default: () => ResearchWorkbenchPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/ui/workbench-view.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // node_modules/yaml/browser/dist/nodes/identity.js
 var ALIAS = Symbol.for("yaml.alias");
@@ -6418,6 +6418,62 @@ function resolveProblemScope(project, notes, options = {}) {
   return scope;
 }
 
+// src/model/inbox.ts
+var PROCESSED_STATES = ["linked", "deferred", "reference"];
+function stringLinks(value) {
+  return typeof value === "string" ? [value] : Array.isArray(value) ? value.filter((link) => typeof link === "string") : [];
+}
+function resolveAssociationPath(link, files) {
+  const target = normalizeLink(link);
+  if (!target) return void 0;
+  const exact = files.find((file) => file.path === target || file.path.replace(/\.md$/, "") === target);
+  if (exact) return exact.path;
+  const matches = files.filter((file) => file.path.split("/").pop()?.replace(/\.md$/, "") === target);
+  return matches.length === 1 ? matches[0].path : void 0;
+}
+function buildInboxIndex(files, options = {}) {
+  return files.filter((file) => !options.inputDirectories || isPathInDirectories(file.path, options.inputDirectories)).flatMap((file) => {
+    const note = parseNote(file);
+    const fm = note.frontmatter;
+    const tags = stringLinks(fm.tags);
+    const enrolled = fm.type === "inbox" || typeof fm.processing_status === "string" || fm.pending === true || fm.pending === "true" || fm.review_status === "pending" || tags.some((tag) => tag.replace(/^#/, "") === "pending-discussion");
+    const archived = fm.archived === true || fm.archived === "true" || fm.status === "archived";
+    if (!enrolled || archived && !options.includeArchived) return [];
+    const status = typeof fm.processing_status === "string" && fm.processing_status.trim() ? fm.processing_status : "pending";
+    const projects = [.../* @__PURE__ */ new Set([...stringLinks(fm.project), ...stringLinks(fm.projects)])];
+    const bodySummary = (note.body ?? "").split("\n").map((line) => line.trim()).find((line) => line && !line.startsWith("#"));
+    return [{
+      path: file.path,
+      title: titleFor(note),
+      kind: ["paper", "idea", "note"].includes(String(fm.input_kind)) ? fm.input_kind : fm.type === "idea" ? "idea" : "note",
+      status,
+      project: typeof fm.project === "string" ? fm.project : void 0,
+      projects,
+      problems: [...new Set(stringLinks(fm.problems))],
+      sourceValue: typeof fm.source === "string" ? fm.source : void 0,
+      summary: typeof fm.summary === "string" ? fm.summary : bodySummary?.slice(0, 240),
+      archived,
+      searchText: file.content,
+      source: { path: file.path, kind: "input" }
+    }];
+  }).sort((a, b) => a.path.localeCompare(b.path));
+}
+function inboxForProject(entries, projectPath, problemPaths, files) {
+  const problems = new Set(problemPaths);
+  return entries.filter((entry) => entry.projects.some((link) => resolveAssociationPath(link, files) === projectPath) || entry.problems.some((link) => {
+    const path = resolveAssociationPath(link, files);
+    return !!path && problems.has(path);
+  }));
+}
+function filterInbox(entries, filters, files) {
+  let filtered = entries;
+  const association = filters.association;
+  if (association?.kind === "project") filtered = inboxForProject(filtered, association.path, filters.problemPaths ?? [], files);
+  else if (association) filtered = filtered.filter((entry) => entry.problems.some((link) => resolveAssociationPath(link, files) === association.path));
+  const query = filters.query?.trim().toLocaleLowerCase() ?? "";
+  return filtered.filter((entry) => (!filters.view || filters.view === "all" || (filters.view === "pending" ? entry.status === "pending" : PROCESSED_STATES.includes(entry.status))) && (!filters.kind || filters.kind === "all" || entry.kind === filters.kind) && (!query || [entry.title, entry.summary, entry.sourceValue, ...entry.projects, ...entry.problems].some((value) => value?.toLocaleLowerCase().includes(query))));
+}
+
 // src/model/project-snapshot.ts
 function asString(value) {
   return typeof value === "string" && value.trim() ? value.trim() : void 0;
@@ -6437,10 +6493,6 @@ function isArchived(note) {
 }
 function summaryText(note) {
   return asString(note.frontmatter.summary) ?? problemNextSteps(note)[0] ?? goalText(note);
-}
-function isExplicitPendingInput(note) {
-  const fm = note.frontmatter ?? parseNote(note).frontmatter ?? {};
-  return fm.pending === true || fm.pending === "true" || fm.processing_status === "pending" || fm.review_status === "pending" || hasTag(note, "pending-discussion");
 }
 function problemNextSteps(note) {
   const body = note.body ?? "";
@@ -6462,7 +6514,7 @@ function buildProjectIndex(files, options = {}) {
   return parseNotes(files).filter((note) => note.frontmatter.type === "project" && (!dataScope || isPathInDirectories(note.path, dataScope.projectDirectories)) && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a, b) => a.path.localeCompare(b.path));
 }
 function problemSummary(note, focus) {
-  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, "problem") };
+  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, "problem") };
 }
 function buildProjectSnapshot(files, projectPath, options = { includeArchived: true }) {
   const dataScope = resolveDataScope(options);
@@ -6474,10 +6526,7 @@ function buildProjectSnapshot(files, projectPath, options = { includeArchived: t
   const projectSummary2 = projectSummaryFor(project);
   const problems = notes.filter((note) => scope.has(note.path) && (options.includeArchived || !isArchived(note))).map((note) => problemSummary(note, focus));
   const tasks = notes.filter((note) => (!options.taskDirectories || isPathInDirectories(note.path, dataScope.taskDirectories)) && hasTag(note, "task") && asLinks(note.frontmatter.projects).some((value) => linkMatches(value, project.path, notes) || [...scope].some((path) => linkMatches(value, path, notes))) && (options.includeArchived || !isArchived(note))).map((note) => ({ path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), priority: asString(note.frontmatter.priority), due: asString(note.frontmatter.due), projects: asLinks(note.frontmatter.projects), archived: isArchived(note), searchText: note.content, source: source(note.path, "task") }));
-  const pendingInputs = notes.filter((note) => (!options.inputDirectories || isPathInDirectories(note.path, dataScope.inputDirectories)) && isExplicitPendingInput(note)).filter((note) => {
-    const p = note.frontmatter.project;
-    return linkMatches(p, project.path, notes) || asLinks(note.frontmatter.problems).some((value) => [...scope].some((path) => linkMatches(value, path, notes)));
-  }).filter((note) => options.includeArchived || !isArchived(note)).map((note) => ({ path: note.path, title: titleFor(note), status: asString(note.frontmatter.processing_status) ?? "pending", project: asString(note.frontmatter.project), archived: isArchived(note), searchText: note.content, source: source(note.path, "input") }));
+  const pendingInputs = inboxForProject(buildInboxIndex(files, { inputDirectories: options.inputDirectories, includeArchived: options.includeArchived }), project.path, [...scope], files).filter((entry) => entry.status === "pending");
   const scopedTitles = [titleFor(project), ...[...scope].map((path) => {
     const n = notes.find((x) => x.path === path);
     return n ? titleFor(n) : "";
@@ -6518,7 +6567,10 @@ var DEFAULT_WORKBENCH_STATE = {
   researchRole: [],
   sources: [],
   includeArchived: false,
-  density: "comfortable"
+  density: "comfortable",
+  inboxView: "pending",
+  inboxKind: "all",
+  inboxAssociation: null
 };
 
 // src/ui/components/icon.ts
@@ -6612,17 +6664,26 @@ function renderMainHeader(container, context, actions) {
   input.oninput = () => actions.setQuery(input.value);
   const searchIcon = search.createSpan({ cls: "rw-search-icon" });
   renderIcon(searchIcon, "search");
-  const record = header.createEl("button", { cls: "rw-button rw-record-button", text: "\uFF0B \u8BB0\u5F55\u60F3\u6CD5" });
-  record.onclick = actions.recordIdea;
+  const capture = header.createDiv({ cls: "rw-record-actions" });
+  capture.createEl("button", { cls: "rw-button rw-primary", text: "\uFF0B \u65B0\u589E\u8D44\u6599" }).onclick = () => actions.recordIdea();
+  capture.createEl("button", { cls: "rw-button", text: "\u5F15\u7528\u7B14\u8BB0" }).onclick = () => actions.addExistingNote();
   return header;
 }
 
-// src/ui/components/source-tags.ts
-function renderSourceTags(container, sources, extra = []) {
-  const wrap = container.createDiv({ cls: "rw-source-tags" });
-  for (const source2 of sources) wrap.createSpan({ cls: `rw-source-tag rw-source-${source2.kind}`, text: source2.label ?? source2.kind });
-  for (const label of extra) wrap.createSpan({ cls: "rw-source-tag rw-source-extra", text: label });
-  return wrap;
+// src/ui/components/property-button.ts
+function renderPropertyButton(container, options) {
+  const value = Array.isArray(options.value) ? options.value.join(", ") : options.value;
+  const button = container.createEl("button", { cls: `rw-property-button ${options.className ?? ""}`, text: `${value || `${options.label}\u5F85\u8865\u5145`} \u25BE` });
+  button.type = "button";
+  button.id = `rw-property-${encodeURIComponent(options.path)}-${options.field}`;
+  button.dataset.field = options.field;
+  button.setAttribute("aria-label", `\u7F16\u8F91${options.label}\uFF1A${value || "\u672A\u8BBE\u7F6E"}`);
+  button.setAttribute("aria-haspopup", "dialog");
+  button.onclick = (event) => {
+    event.stopPropagation();
+    options.onEdit(button);
+  };
+  return button;
 }
 
 // src/ui/components/problem-row.ts
@@ -6635,43 +6696,43 @@ function renderProblemRow(container, problem, actions) {
   const body = row.createDiv({ cls: "rw-problem-main" });
   const identity = body.createDiv({ cls: "rw-problem-identity" });
   identity.createEl("strong", { text: problem.title });
-  const status = identity.createSpan({ cls: `rw-status rw-status-${problem.status ?? "unknown"}` });
-  status.createSpan({ cls: "rw-status-dot", text: problem.status === "completed" ? "\u2713" : "\u25CB" });
-  status.createSpan({ text: problem.status ?? "\u5F85\u786E\u8BA4" });
+  renderPropertyButton(identity, { path: problem.path, field: "status", label: "\u95EE\u9898\u72B6\u6001", value: problem.status ?? "", className: "rw-status", onEdit: (anchor) => actions.editProperty(problem.path, "problem", "status", anchor) });
   body.createEl("p", { cls: "rw-problem-summary", text: problem.summary ?? problem.nextSteps[0] ?? "\u7406\u89E3\u5F85\u8865\u5145" });
   const meta = body.createDiv({ cls: "rw-problem-meta" });
+  meta.createSpan({ cls: "rw-type-marker", text: `\u7C7B\u578B\uFF1A${problem.source.kind}` });
   if (problem.focus) {
-    const focusTag = meta.createSpan({ cls: "rw-focus-tag" });
-    renderIcon(focusTag, "flag");
-    focusTag.createSpan({ text: "\u672C\u9636\u6BB5\u5173\u6CE8" });
+    const focus = meta.createSpan({ cls: "rw-focus-tag" });
+    renderIcon(focus, "flag");
+    focus.createSpan({ text: "\u672C\u9636\u6BB5\u5173\u6CE8" });
   }
-  const tags = renderSourceTags(meta, [problem.source], [problem.stage ?? "\u9636\u6BB5\u5F85\u786E\u8BA4"]);
-  tags.addClass("rw-editable-tags");
-  tags.setAttribute("role", "button");
-  tags.setAttribute("aria-label", "\u7F16\u8F91\u95EE\u9898\u5C5E\u6027");
-  tags.onclick = (event) => {
+  for (const [field, label, value] of [["stage", "\u9636\u6BB5", problem.stage ?? ""], ["research_role", "\u89D2\u8272", problem.researchRole ?? ""], ["tags", "\u6807\u7B7E", problem.tags ?? []]]) {
+    const group = meta.createDiv({ cls: "rw-property-group" });
+    group.createEl("small", { cls: "rw-muted", text: label });
+    renderPropertyButton(group, { path: problem.path, field, label, value, onEdit: (anchor) => actions.editProperty(problem.path, "problem", field, anchor) });
+  }
+  const material = body.createDiv({ cls: "rw-problem-material-actions" });
+  const add = material.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u6DFB\u52A0\u8D44\u6599" });
+  add.dataset.action = "add-material";
+  add.onclick = (event) => {
     event.stopPropagation();
-    actions.edit(problem.path);
+    actions.recordIdea({ problemPath: problem.path });
+  };
+  const show = material.createEl("button", { cls: "rw-link-button", text: "\u67E5\u770B\u8D44\u6599" });
+  show.onclick = (event) => {
+    event.stopPropagation();
+    actions.viewMaterial("problem", problem.path);
   };
   const last = row.createDiv({ cls: "rw-problem-last" });
   last.createEl("span", { text: problem.archived ? "\u5DF2\u5F52\u6863" : problem.lastUpdated ?? "\u5F85\u9996\u6B21\u6574\u7406" });
   last.createSpan({ cls: "rw-row-arrow", text: "\u203A" });
   const menu = row.createDiv({ cls: "rw-row-menu" });
-  const edit = menu.createEl("button", { text: "\u7F16\u8F91", attr: { "aria-label": "\u7F16\u8F91\u95EE\u9898" } });
-  edit.onclick = (event) => {
-    event.stopPropagation();
-    actions.edit(problem.path);
-  };
-  const focus = menu.createEl("button", { text: problem.focus ? "\u53D6\u6D88\u7126\u70B9" : "\u8BBE\u4E3A\u7126\u70B9", attr: { "aria-label": problem.focus ? "\u53D6\u6D88\u7126\u70B9" : "\u8BBE\u4E3A\u7126\u70B9" } });
-  focus.onclick = (event) => {
-    event.stopPropagation();
-    actions.toggleFocus(problem);
-  };
-  const archive = menu.createEl("button", { text: "\u5F52\u6863", attr: { "aria-label": "\u5F52\u6863\u95EE\u9898" } });
-  archive.onclick = (event) => {
-    event.stopPropagation();
-    actions.archive(problem.path);
-  };
+  for (const [label, action] of [["\u7F16\u8F91", () => actions.edit(problem.path)], [problem.focus ? "\u53D6\u6D88\u7126\u70B9" : "\u8BBE\u4E3A\u7126\u70B9", () => actions.toggleFocus(problem)], ["\u5F52\u6863", () => actions.archive(problem.path)]]) {
+    const button = menu.createEl("button", { text: label, attr: { "aria-label": label } });
+    button.onclick = (event) => {
+      event.stopPropagation();
+      action();
+    };
+  }
   return row;
 }
 
@@ -6770,6 +6831,7 @@ function renderPendingInbox(container, inputs, actions) {
       };
     }
   }
+  card.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u65B0\u589E\u8D44\u6599" }).onclick = () => actions.recordIdea();
   const action = card.createEl("button", { cls: "rw-link-button", text: "\u6253\u5F00\u6536\u4EF6\u7BB1" });
   action.onclick = actions.openInbox;
   return card;
@@ -6789,78 +6851,194 @@ function renderEmptyState(container, kind, actions) {
   return empty;
 }
 
+// src/ui/panels/inbox-panel.ts
+var KIND_LABELS = { paper: "\u8BBA\u6587", idea: "\u60F3\u6CD5", note: "\u7B14\u8BB0" };
+var STATE_LABELS = { pending: "\u5F85\u5904\u7406", linked: "\u5DF2\u5173\u8054", deferred: "\u6682\u7F13", reference: "\u53C2\u8003" };
+function renderInboxPanel(container, context, actions) {
+  const panel = container.createDiv({ cls: "rw-panel rw-inbox-panel" });
+  const heading = panel.createDiv({ cls: "rw-section-head" });
+  heading.createEl("h2", { text: "\u8D44\u6599\u6536\u4EF6\u7BB1" });
+  const capture = heading.createDiv({ cls: "rw-section-actions" });
+  capture.createEl("button", { cls: "rw-button rw-primary", text: "\uFF0B \u65B0\u589E\u8D44\u6599" }).onclick = () => actions.recordIdea();
+  capture.createEl("button", { cls: "rw-button", text: "\u5F15\u7528\u5DF2\u6709\u7B14\u8BB0" }).onclick = () => actions.addExistingNote();
+  panel.createEl("p", { cls: "rw-muted", text: "\u53EF\u4EE5\u5148\u6536\u96C6\uFF0C\u518D\u5173\u8054\u9879\u76EE\u548C\u7814\u7A76\u95EE\u9898\u3002" });
+  const controls = panel.createDiv({ cls: "rw-inbox-controls" });
+  for (const [value, label] of [["pending", "\u5F85\u5904\u7406"], ["processed", "\u5DF2\u5904\u7406"], ["all", "\u5168\u90E8"]]) {
+    const button = controls.createEl("button", { cls: `rw-filter-tab ${context.filters.view === value ? "is-active" : ""}`, text: label });
+    button.onclick = () => actions.setInboxView(value);
+  }
+  const kind = controls.createEl("select", { attr: { "aria-label": "\u8D44\u6599\u7C7B\u578B\u7B5B\u9009" } });
+  for (const [value, label] of [["all", "\u5168\u90E8\u7C7B\u578B"], ["paper", "\u8BBA\u6587"], ["idea", "\u60F3\u6CD5"], ["note", "\u7B14\u8BB0"]]) kind.createEl("option", { value, text: label });
+  kind.value = context.filters.kind ?? "all";
+  kind.onchange = () => actions.setInboxKind(kind.value);
+  if (context.filters.association) {
+    const filter = panel.createDiv({ cls: "rw-inbox-scope" });
+    filter.createSpan({ text: `\u5173\u8054${context.filters.association.kind === "project" ? "\u9879\u76EE" : "\u95EE\u9898"}\uFF1A${context.filters.association.path}` });
+    filter.createEl("button", { cls: "rw-link-button", text: "\u6E05\u9664\u7B5B\u9009" }).onclick = actions.clearInboxAssociation;
+  }
+  const entries = filterInbox(context.entries, context.filters, context.files);
+  for (const entry of entries) {
+    const row = panel.createDiv({ cls: "rw-inbox-entry" });
+    row.dataset.path = entry.path;
+    const identity = row.createDiv({ cls: "rw-inbox-entry-heading" });
+    identity.createEl("button", { cls: "rw-inbox-title", text: entry.title }).onclick = () => actions.openPending(entry);
+    identity.createEl("small", { cls: "rw-source-tag", text: KIND_LABELS[entry.kind] });
+    if (entry.summary) row.createEl("p", { cls: "rw-muted", text: entry.summary });
+    const links = row.createDiv({ cls: "rw-association-chips" });
+    for (const [type, values] of [["\u9879\u76EE", entry.projects], ["\u95EE\u9898", entry.problems]]) for (const value of values) links.createSpan({ cls: "rw-source-tag", text: `${type}\uFF1A${normalizeLink(value) ?? value}` });
+    if (!entry.projects.length && !entry.problems.length) links.createSpan({ cls: "rw-muted", text: "\u5C1A\u672A\u5173\u8054" });
+    if (entry.sourceValue) {
+      const source2 = row.createDiv({ cls: "rw-inbox-source" });
+      source2.createEl("small", { cls: "rw-muted", text: entry.sourceValue });
+      source2.createEl("button", { cls: "rw-link-button", text: "\u6253\u5F00\u6765\u6E90" }).onclick = () => actions.openSource(entry);
+    }
+    const actionsRow = row.createDiv({ cls: "rw-inbox-entry-actions" });
+    actionsRow.createEl("button", { cls: "rw-button", text: "\u5173\u8054\u9879\u76EE / \u95EE\u9898" }).onclick = () => actions.editInputAssociations(entry);
+    const status = actionsRow.createEl("select", { attr: { "aria-label": `\u5904\u7406\u72B6\u6001 ${entry.title}` } });
+    for (const [value, label] of Object.entries(STATE_LABELS)) status.createEl("option", { value, text: label });
+    if (!Object.prototype.hasOwnProperty.call(STATE_LABELS, entry.status)) status.createEl("option", { value: entry.status, text: entry.status });
+    status.value = entry.status;
+    status.onchange = () => actions.transitionPending(entry, status.value);
+  }
+  if (!entries.length) panel.createEl("p", { cls: "rw-muted rw-inbox-empty", text: "\u5F53\u524D\u8303\u56F4\u6682\u65E0\u8D44\u6599\uFF0C\u53EF\u4EE5\u65B0\u589E\u6216\u5F15\u7528\u5DF2\u6709\u7B14\u8BB0\u3002" });
+  return panel;
+}
+
+// src/ui/panels/goals-panel.ts
+function renderGoalsPanel(container, snapshot, onEdit, onEditField) {
+  const panel = container.createDiv({ cls: "rw-panel rw-goals-panel" });
+  panel.createEl("h2", { text: "\u9636\u6BB5\u76EE\u6807" });
+  panel.createEl("p", { cls: "rw-panel-lead", text: snapshot.project.goal ?? "\u76EE\u6807\u5F85\u8865\u5145" });
+  for (const [field, label, value] of [["current_gate", "\u5F53\u524D\u95E8\u69DB", snapshot.project.currentGate], ["next_milestone", "\u4E0B\u4E00\u91CC\u7A0B\u7891", snapshot.project.nextMilestone]]) {
+    const row = panel.createDiv({ cls: "rw-goal-row" });
+    row.createEl("small", { text: label });
+    if (onEditField) renderPropertyButton(row, { path: snapshot.project.path, field, label, value: value ?? "", onEdit: (anchor) => onEditField(field, anchor) });
+    else row.createEl("strong", { text: value ?? "\u5F85\u8865\u5145" });
+  }
+  panel.createEl("button", { cls: "rw-button", text: "\u7F16\u8F91\u9636\u6BB5\u76EE\u6807" }).onclick = onEdit;
+  return panel;
+}
+
+// src/ui/panels/records-panel.ts
+function renderRecordsPanel(container, snapshot, open) {
+  const panel = container.createDiv({ cls: "rw-panel rw-records-panel" });
+  panel.createEl("h2", { text: "\u8FDB\u5C55\u8BB0\u5F55" });
+  for (const record of snapshot.records) {
+    const item = panel.createEl("button", { cls: "rw-record-item", text: `${record.date ?? "\u5F85\u786E\u8BA4"} \xB7 ${record.title}` });
+    item.onclick = () => open(record.path);
+  }
+  if (!snapshot.records.length) panel.createEl("p", { cls: "rw-muted", text: "\u6682\u65E0\u660E\u786E\u5173\u8054\u8BB0\u5F55\u3002" });
+  return panel;
+}
+
+// src/ui/panels/project-note-panel.ts
+function renderProjectNotePanel(container, snapshot, open) {
+  const panel = container.createDiv({ cls: "rw-panel rw-project-note-panel" });
+  panel.createEl("h2", { text: "\u9879\u76EE\u7B14\u8BB0" });
+  panel.createEl("p", { cls: "rw-panel-lead", text: "\u4F7F\u7528 Obsidian \u539F\u751F\u7F16\u8F91\u5668\u9605\u8BFB\u548C\u4FEE\u6539\u9879\u76EE\u6B63\u6587\u3002" });
+  panel.createEl("button", { cls: "rw-button rw-primary", text: "\u6253\u5F00\u9879\u76EE\u7B14\u8BB0" }).onclick = open;
+  return panel;
+}
+
 // src/ui/components/workbench-shell.ts
 function renderWorkbench(container, context, actions) {
   container.empty();
   const root = container.createDiv({ cls: `research-workbench rw-shell rw-density-${context.state.density}` });
   root.dataset.panel = context.state.panel;
   renderMainHeader(root, context, actions);
-  const layout = root.createDiv({ cls: "rw-layout" });
+  const layout = root.createDiv({ cls: `rw-layout ${context.state.panel === "workspace" && context.snapshot ? "" : "rw-layout-two-column"}` });
   renderProjectSidebar(layout, context.projects, context.state, actions);
   const main = layout.createDiv({ cls: "rw-main-column" });
-  if (context.state.panel === "workspace") {
-    const header = main.createDiv({ cls: "rw-project-header" });
-    header.createDiv({ cls: "rw-project-kicker", text: "\u7814\u7A76\u9879\u76EE" });
-    const titleLine = header.createDiv({ cls: "rw-project-title-line" });
-    const projectMark = titleLine.createSpan({ cls: "rw-project-mark" });
-    renderIcon(projectMark, "network");
-    titleLine.createEl("h1", { text: context.snapshot.project.title });
-    header.createEl("p", { cls: "rw-project-goal", text: context.snapshot.project.goal ?? "\u76EE\u6807\u5F85\u8865\u5145" });
-    const problemArea = main.createDiv({ cls: "rw-problem-area" });
-    const sectionHead = problemArea.createDiv({ cls: "rw-section-head" });
-    sectionHead.createEl("h2", { text: "\u7814\u7A76\u95EE\u9898" });
-    const headActions = sectionHead.createDiv({ cls: "rw-section-actions" });
-    headActions.createEl("button", { cls: "rw-button rw-primary", text: "\uFF0B \u65B0\u5EFA\u95EE\u9898" }).onclick = actions.createProblem;
-    const tabs = problemArea.createDiv({ cls: "rw-filter-tabs" });
-    for (const [key, label] of [["all", `\u5168\u90E8\u95EE\u9898 ${context.snapshot.problems.length}`], ["focus", `\u672C\u9636\u6BB5\u5173\u6CE8 ${context.snapshot.focusProblemPaths.length}`]]) {
-      const button = tabs.createEl("button", { cls: `rw-filter-tab ${context.state.problemFilter === key ? "is-active" : ""}`, text: label });
-      button.onclick = () => actions.setProblemFilter(key);
-    }
-    const filter = problemArea.createEl("button", { cls: "rw-button rw-filter-button", text: "\u2637 \u7B5B\u9009" });
-    filter.onclick = () => {
-      const panel = problemArea.querySelector(".rw-filter-panel");
-      if (panel) {
-        panel.remove();
-        return;
-      }
-      const controls = problemArea.createDiv({ cls: "rw-filter-panel" });
-      const status = controls.createEl("select");
-      status.multiple = true;
-      status.setAttribute("aria-label", "\u72B6\u6001\u7B5B\u9009");
-      for (const value of ["proposed", "active", "exploring", "in-progress", "completed", "archived"]) status.createEl("option", { value, text: value });
-      const stage = controls.createEl("select");
-      stage.multiple = true;
-      stage.setAttribute("aria-label", "\u9636\u6BB5\u7B5B\u9009");
-      for (const value of ["inbox", "analysis", "evaluation", "decision", "completed"]) stage.createEl("option", { value, text: value });
-      const role = controls.createEl("select");
-      role.multiple = true;
-      role.setAttribute("aria-label", "\u8D44\u6E90\u89D2\u8272\u7B5B\u9009");
-      for (const value of ["mainline", "probe", "parked"]) role.createEl("option", { value, text: value });
-      const archived = controls.createEl("label");
-      const archivedInput = archived.createEl("input", { type: "checkbox" });
-      archived.appendText(" \u663E\u793A\u5DF2\u5F52\u6863");
-      const fullText = controls.createEl("label");
-      const fullTextInput = fullText.createEl("input", { type: "checkbox" });
-      fullText.appendText(" \u641C\u7D22\u6B63\u6587");
-      const apply = controls.createEl("button", { cls: "rw-button rw-primary", text: "\u5E94\u7528\u7B5B\u9009" });
-      apply.onclick = () => {
-        const values = (select) => Array.from(select.selectedOptions).map((option) => option.value);
-        actions.setFilters({ status: values(status), stage: values(stage), researchRole: values(role), __includeArchived: archivedInput.checked ? ["true"] : [], __fullText: fullTextInput.checked ? ["true"] : [] });
-      };
-    };
-    const filtered = filterWorkbenchItems(context.snapshot, context.state.query, { fullText: context.state.fullText, includeArchived: context.state.includeArchived, status: context.state.status, stage: context.state.stage, researchRole: context.state.researchRole, sources: context.state.sources });
-    const filteredSnapshot = { ...context.snapshot, problems: filtered.problems, tasks: filtered.tasks, pendingInputs: filtered.pendingInputs };
-    if (filtered.problems.length === 0) renderEmptyState(problemArea, context.state.query ? "search" : "problem", actions);
-    else renderProblemTable(problemArea, filteredSnapshot, context.state, actions);
-  } else {
-    const panel = main.createDiv({ cls: "rw-panel-placeholder" });
-    panel.createEl("h2", { text: context.state.panel === "goals" ? "\u9636\u6BB5\u76EE\u6807" : context.state.panel === "records" ? "\u8FDB\u5C55\u8BB0\u5F55" : context.state.panel === "inbox" ? "\u6536\u4EF6\u7BB1" : "\u9879\u76EE\u7B14\u8BB0" });
-    panel.createEl("p", { text: context.state.panel === "goals" ? context.snapshot.project.currentGate ?? "\u5F53\u524D\u95E8\u69DB\u5F85\u8865\u5145" : context.state.panel === "records" ? `${context.snapshot.records.length} \u6761\u7814\u7A76\u8BB0\u5F55` : context.state.panel === "inbox" ? `${context.snapshot.pendingInputs.length} \u6761\u5F85\u8BA8\u8BBA\u8F93\u5165` : "\u6253\u5F00\u9879\u76EE\u539F Markdown \u6B63\u6587\u9605\u8BFB\u548C\u7F16\u8F91\u3002" });
+  const snapshot = context.snapshot;
+  if (context.state.panel === "inbox") {
+    if (context.inputConfigured === false) main.createEl("p", { cls: "rw-muted", text: "\u8BF7\u5148\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u914D\u7F6E\u5E76\u521B\u5EFA\u5F85\u8BA8\u8BBA\u8F93\u5165\u76EE\u5F55\u3002" });
+    renderInboxPanel(main, { entries: context.inbox ?? [], filters: { view: context.state.inboxView, kind: context.state.inboxKind, query: context.state.query, association: context.state.inboxAssociation, problemPaths: context.inboxProblemPaths }, files: context.files ?? [] }, actions);
+    return root;
   }
+  if (!snapshot) {
+    const empty = main.createDiv({ cls: "rw-empty-state" });
+    empty.createEl("h2", { text: "\u5C1A\u672A\u9009\u62E9\u9879\u76EE" });
+    empty.createEl("p", { cls: "rw-muted", text: "\u53EF\u4EE5\u5148\u5728\u6536\u4EF6\u7BB1\u8BB0\u5F55\u8D44\u6599\uFF0C\u518D\u521B\u5EFA\u6216\u9009\u62E9\u9879\u76EE\u3002" });
+    empty.createEl("button", { cls: "rw-button rw-primary", text: "\u6253\u5F00\u6536\u4EF6\u7BB1" }).onclick = () => actions.selectPanel("inbox");
+    empty.createEl("button", { cls: "rw-button", text: "\u65B0\u5EFA\u9879\u76EE" }).onclick = actions.createProject;
+    return root;
+  }
+  if (context.state.panel === "goals") {
+    renderGoalsPanel(main, snapshot, actions.editGoals, (field, anchor) => actions.editProperty(snapshot.project.path, "project", field, anchor));
+    return root;
+  }
+  if (context.state.panel === "records") {
+    renderRecordsPanel(main, snapshot, (path) => actions.openTask(path));
+    return root;
+  }
+  if (context.state.panel === "project-note") {
+    renderProjectNotePanel(main, snapshot, () => actions.openTask(snapshot.project.path));
+    return root;
+  }
+  const header = main.createDiv({ cls: "rw-project-header" });
+  header.createDiv({ cls: "rw-project-kicker", text: "\u7814\u7A76\u9879\u76EE" });
+  const titleLine = header.createDiv({ cls: "rw-project-title-line" });
+  const mark = titleLine.createSpan({ cls: "rw-project-mark" });
+  renderIcon(mark, "network");
+  titleLine.createEl("h1", { text: snapshot.project.title });
+  renderPropertyButton(titleLine, { path: snapshot.project.path, field: "status", label: "\u9879\u76EE\u72B6\u6001", value: snapshot.project.status ?? "", onEdit: (anchor) => actions.editProperty(snapshot.project.path, "project", "status", anchor) });
+  header.createEl("p", { cls: "rw-project-goal", text: snapshot.project.goal ?? "\u76EE\u6807\u5F85\u8865\u5145" });
+  const goals = header.createDiv({ cls: "rw-project-goal-properties" });
+  for (const [field, label, value] of [["current_gate", "\u5F53\u524D\u95E8\u69DB", snapshot.project.currentGate], ["next_milestone", "\u4E0B\u4E00\u91CC\u7A0B\u7891", snapshot.project.nextMilestone]]) {
+    const row = goals.createDiv({ cls: "rw-project-goal-property" });
+    row.createEl("small", { cls: "rw-muted", text: label });
+    renderPropertyButton(row, { path: snapshot.project.path, field, label, value: value ?? "", onEdit: (anchor) => actions.editProperty(snapshot.project.path, "project", field, anchor) });
+  }
+  const problemArea = main.createDiv({ cls: "rw-problem-area" });
+  const sectionHead = problemArea.createDiv({ cls: "rw-section-head" });
+  sectionHead.createEl("h2", { text: "\u7814\u7A76\u95EE\u9898" });
+  const headActions = sectionHead.createDiv({ cls: "rw-section-actions" });
+  headActions.createEl("button", { cls: "rw-button rw-primary", text: "\uFF0B \u65B0\u5EFA\u95EE\u9898" }).onclick = actions.createProblem;
+  const tabs = problemArea.createDiv({ cls: "rw-filter-tabs" });
+  for (const [key, label] of [["all", `\u5168\u90E8\u95EE\u9898 ${snapshot.problems.length}`], ["focus", `\u672C\u9636\u6BB5\u5173\u6CE8 ${snapshot.focusProblemPaths.length}`]]) {
+    const button = tabs.createEl("button", { cls: `rw-filter-tab ${context.state.problemFilter === key ? "is-active" : ""}`, text: label });
+    button.onclick = () => actions.setProblemFilter(key);
+  }
+  const filter = problemArea.createEl("button", { cls: "rw-button rw-filter-button", text: "\u2637 \u7B5B\u9009" });
+  filter.onclick = () => {
+    const panel = problemArea.querySelector(".rw-filter-panel");
+    if (panel) {
+      panel.remove();
+      return;
+    }
+    const controls = problemArea.createDiv({ cls: "rw-filter-panel" });
+    const createSelect = (label, values, selected) => {
+      const select = controls.createEl("select", { attr: { "aria-label": label } });
+      select.multiple = true;
+      for (const value of [.../* @__PURE__ */ new Set([...values, ...selected])]) {
+        const option = select.createEl("option", { value, text: value });
+        option.selected = selected.includes(value);
+      }
+      return select;
+    };
+    const status = createSelect("\u72B6\u6001\u7B5B\u9009", ["proposed", "active", "exploring", "in-progress", "completed", "archived"], context.state.status);
+    const stage = createSelect("\u9636\u6BB5\u7B5B\u9009", ["inbox", "analysis", "evaluation", "decision", "completed"], context.state.stage);
+    const role = createSelect("\u8D44\u6E90\u89D2\u8272\u7B5B\u9009", ["mainline", "probe", "parked"], context.state.researchRole);
+    const archived = controls.createEl("label");
+    const archivedInput = archived.createEl("input", { type: "checkbox" });
+    archivedInput.checked = context.state.includeArchived;
+    archived.appendText(" \u663E\u793A\u5DF2\u5F52\u6863");
+    const fullText = controls.createEl("label");
+    const fullTextInput = fullText.createEl("input", { type: "checkbox" });
+    fullTextInput.checked = context.state.fullText;
+    fullText.appendText(" \u641C\u7D22\u6B63\u6587");
+    controls.createEl("button", { cls: "rw-button rw-primary", text: "\u5E94\u7528\u7B5B\u9009" }).onclick = () => {
+      const values = (select) => Array.from(select.selectedOptions).map((option) => option.value);
+      actions.setFilters({ status: values(status), stage: values(stage), researchRole: values(role), __includeArchived: archivedInput.checked ? ["true"] : [], __fullText: fullTextInput.checked ? ["true"] : [] });
+    };
+  };
+  const filtered = filterWorkbenchItems(snapshot, context.state.query, { fullText: context.state.fullText, includeArchived: context.state.includeArchived, status: context.state.status, stage: context.state.stage, researchRole: context.state.researchRole, sources: context.state.sources });
+  if (!filtered.problems.length) renderEmptyState(problemArea, context.state.query ? "search" : "problem", actions);
+  else renderProblemTable(problemArea, { ...snapshot, problems: filtered.problems, tasks: filtered.tasks, pendingInputs: filtered.pendingInputs }, context.state, actions);
   const rail = layout.createDiv({ cls: "rw-right-rail" });
-  renderFocusPanel(rail, context.snapshot, actions);
+  renderFocusPanel(rail, snapshot, actions);
   renderTimeline(rail, context.events, actions);
-  renderPendingInbox(rail, context.snapshot.pendingInputs, actions);
+  renderPendingInbox(rail, snapshot.pendingInputs, actions);
   return root;
 }
 
@@ -6872,6 +7050,9 @@ function getModalFieldAttributes(options) {
   return { controlClass: options.control === "textarea" ? "rw-modal-textarea" : "rw-modal-control", required: options.required === true, type: options.control === "input" ? "text" : void 0, label: getModalFieldCopy(options.key).label };
 }
 var FIELD_COPY = {
+  captureTitle: { label: "\u8D44\u6599\u6807\u9898", description: "\u5199\u4E00\u4E2A\u4FBF\u4E8E\u7A0D\u540E\u627E\u5230\u7684\u6807\u9898\uFF1B\u53EF\u4EE5\u5148\u8BB0\u5F55\uFF0C\u518D\u6574\u7406\u5173\u8054\u3002" },
+  captureKind: { label: "\u8D44\u6599\u7C7B\u578B", description: "\u9009\u62E9\u8BBA\u6587\u3001\u60F3\u6CD5\u6216\u666E\u901A\u7B14\u8BB0\u3002" },
+  captureContent: { label: "\u5185\u5BB9\u6216\u7B80\u8FF0", description: "\u53EF\u9009\uFF1A\u5199\u4E0B\u8981\u70B9\u3001\u60F3\u6CD5\u6216\u9700\u8981\u7EE7\u7EED\u9605\u8BFB\u7684\u5185\u5BB9\u3002" },
   problemStatus: { label: "\u72B6\u6001", description: "\u8BF4\u660E\u8FD9\u4E2A\u7814\u7A76\u95EE\u9898\u5F53\u524D\u5904\u4E8E\u4EC0\u4E48\u751F\u547D\u5468\u671F\u72B6\u6001\u3002", example: "\u793A\u4F8B\uFF1Aexploring\u3001active\u3001completed" },
   problemStage: { label: "\u7814\u7A76\u9636\u6BB5", description: "\u8BF4\u660E\u95EE\u9898\u5F53\u524D\u4F4D\u4E8E\u7814\u7A76\u6D41\u7A0B\u7684\u54EA\u4E2A\u9636\u6BB5\u3002", example: "\u793A\u4F8B\uFF1Ainbox\u3001analysis\u3001evaluation" },
   researchRole: { label: "\u8D44\u6E90\u89D2\u8272", description: "\u8BF4\u660E\u5B83\u5728\u7814\u7A76\u4E2D\u7684\u4F5C\u7528\uFF1A\u4E3B\u7EBF\u3001\u63A2\u7D22\u652F\u7EBF\u6216\u6682\u5B58\u3002", example: "\u793A\u4F8B\uFF1Amainline\u3001probe\u3001parked" },
@@ -6977,33 +7158,9 @@ var TaskModal = class extends import_obsidian2.Modal {
   }
 };
 
-// src/ui/modals/pending-modal.ts
-var import_obsidian3 = require("obsidian");
-var PendingModal = class extends import_obsidian3.Modal {
-  constructor(app, submit) {
-    super(app);
-    this.submit = submit;
-  }
-  onOpen() {
-    this.titleEl.setText("\u8BB0\u5F55\u5F85\u8BA8\u8BBA\u5185\u5BB9");
-    const text = createModalField(this.contentEl, { key: "pendingText", control: "textarea", required: true }).input;
-    const source2 = createModalField(this.contentEl, { key: "pendingSource", control: "input" }).input;
-    const b = this.contentEl.createEl("button", { text: "\u52A0\u5165\u6536\u4EF6\u7BB1", cls: "mod-cta rw-modal-button" });
-    b.onclick = async () => {
-      if (!text.value.trim()) {
-        new import_obsidian3.Notice("\u5F85\u8BA8\u8BBA\u5185\u5BB9\u9700\u8981\u586B\u5199\u3002");
-        return;
-      }
-      await this.submit(text.value.trim(), source2.value.trim());
-      this.close();
-    };
-    text.focus();
-  }
-};
-
 // src/ui/modals/problem-modal.ts
-var import_obsidian4 = require("obsidian");
-var ProblemModal = class extends import_obsidian4.Modal {
+var import_obsidian3 = require("obsidian");
+var ProblemModal = class extends import_obsidian3.Modal {
   constructor(app, submit) {
     super(app);
     this.submit = submit;
@@ -7016,7 +7173,7 @@ var ProblemModal = class extends import_obsidian4.Modal {
     const run = async () => {
       const result = { title: title.value.trim(), question: question.value.trim() };
       if (!result.title || !result.question) {
-        new import_obsidian4.Notice("Title and question are required.");
+        new import_obsidian3.Notice("Title and question are required.");
         return;
       }
       await this.submit(result);
@@ -7185,9 +7342,6 @@ ${input.question}
 async function updateTask(app, path, input, expectedHash) {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (frontmatter) => Object.assign(frontmatter, input));
 }
-async function updatePendingInput(app, path, transition, expectedHash) {
-  return writeFrontmatterWithExpectedHash(app, path, expectedHash, (frontmatter) => Object.assign(frontmatter, { pending: transition === "pending", processing_status: transition }));
-}
 async function archiveEntity(app, path, expectedHash) {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (frontmatter) => {
     frontmatter.archived = true;
@@ -7205,57 +7359,9 @@ async function linkExistingProblemToProject(app, projectPath, problemPath, optio
   });
 }
 
-// src/ui/panels/goals-panel.ts
-function renderGoalsPanel(container, snapshot, onEdit) {
-  const panel = container.createDiv({ cls: "rw-panel rw-goals-panel" });
-  panel.createEl("h2", { text: "\u9636\u6BB5\u76EE\u6807" });
-  panel.createEl("p", { cls: "rw-panel-lead", text: snapshot.project.goal ?? "\u76EE\u6807\u5F85\u8865\u5145" });
-  for (const [label, value] of [["\u5F53\u524D\u95E8\u69DB", snapshot.project.currentGate], ["\u4E0B\u4E00\u91CC\u7A0B\u7891", snapshot.project.nextMilestone], ["\u9A8C\u6536\u6807\u51C6", "\u4ECE\u9879\u76EE\u6B63\u6587\u8BFB\u53D6"]]) {
-    const row = panel.createDiv({ cls: "rw-goal-row" });
-    row.createEl("small", { text: label });
-    row.createEl("strong", { text: value ?? "\u5F85\u8865\u5145" });
-  }
-  panel.createEl("button", { cls: "rw-button", text: "\u7F16\u8F91\u9636\u6BB5\u76EE\u6807" }).onclick = onEdit;
-  return panel;
-}
-
-// src/ui/panels/records-panel.ts
-function renderRecordsPanel(container, snapshot, open) {
-  const panel = container.createDiv({ cls: "rw-panel rw-records-panel" });
-  panel.createEl("h2", { text: "\u8FDB\u5C55\u8BB0\u5F55" });
-  for (const record of snapshot.records) {
-    const item = panel.createEl("button", { cls: "rw-record-item", text: `${record.date ?? "\u5F85\u786E\u8BA4"} \xB7 ${record.title}` });
-    item.onclick = () => open(record.path);
-  }
-  if (!snapshot.records.length) panel.createEl("p", { cls: "rw-muted", text: "\u6682\u65E0\u660E\u786E\u5173\u8054\u8BB0\u5F55\u3002" });
-  return panel;
-}
-
-// src/ui/panels/inbox-panel.ts
-function renderInboxPanel(container, inputs, open) {
-  const panel = container.createDiv({ cls: "rw-panel rw-inbox-panel" });
-  panel.createEl("h2", { text: "\u6536\u4EF6\u7BB1" });
-  panel.createEl("p", { cls: "rw-panel-lead", text: "\u8FD9\u91CC\u53EA\u663E\u793A\u660E\u786E\u6807\u8BB0\u4E3A\u4E4B\u540E\u8BA8\u8BBA\u7684\u8D44\u6599\u3002" });
-  for (const input of inputs) {
-    const item = panel.createEl("button", { cls: "rw-inbox-row", text: `${input.title} \xB7 ${input.status}` });
-    item.onclick = () => open(input.path);
-  }
-  if (!inputs.length) panel.createEl("p", { cls: "rw-muted", text: "\u6536\u4EF6\u7BB1\u4E3A\u7A7A\u3002" });
-  return panel;
-}
-
-// src/ui/panels/project-note-panel.ts
-function renderProjectNotePanel(container, snapshot, open) {
-  const panel = container.createDiv({ cls: "rw-panel rw-project-note-panel" });
-  panel.createEl("h2", { text: "\u9879\u76EE\u7B14\u8BB0" });
-  panel.createEl("p", { cls: "rw-panel-lead", text: "\u4F7F\u7528 Obsidian \u539F\u751F\u7F16\u8F91\u5668\u9605\u8BFB\u548C\u4FEE\u6539\u9879\u76EE\u6B63\u6587\u3002" });
-  panel.createEl("button", { cls: "rw-button rw-primary", text: "\u6253\u5F00\u9879\u76EE\u7B14\u8BB0" }).onclick = open;
-  return panel;
-}
-
 // src/ui/modals/edit-problem-modal.ts
-var import_obsidian5 = require("obsidian");
-var EditProblemModal = class extends import_obsidian5.Modal {
+var import_obsidian4 = require("obsidian");
+var EditProblemModal = class extends import_obsidian4.Modal {
   constructor(app, initial, submit) {
     super(app);
     this.initial = initial;
@@ -7269,7 +7375,7 @@ var EditProblemModal = class extends import_obsidian5.Modal {
     const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u4FDD\u5B58\u95EE\u9898\u5C5E\u6027" });
     button.onclick = async () => {
       if (!status.value.trim() || !stage.value.trim() || !role.value.trim()) {
-        new import_obsidian5.Notice("\u72B6\u6001\u3001\u9636\u6BB5\u548C\u8D44\u6E90\u89D2\u8272\u4E0D\u80FD\u4E3A\u7A7A\u3002");
+        new import_obsidian4.Notice("\u72B6\u6001\u3001\u9636\u6BB5\u548C\u8D44\u6E90\u89D2\u8272\u4E0D\u80FD\u4E3A\u7A7A\u3002");
         return;
       }
       await this.submit({ status: status.value.trim(), stage: stage.value.trim(), researchRole: role.value.trim() });
@@ -7283,8 +7389,8 @@ var EditProblemModal = class extends import_obsidian5.Modal {
 };
 
 // src/ui/modals/associate-problem-modal.ts
-var import_obsidian6 = require("obsidian");
-var AssociateProblemModal = class extends import_obsidian6.Modal {
+var import_obsidian5 = require("obsidian");
+var AssociateProblemModal = class extends import_obsidian5.Modal {
   constructor(app, problems, submit) {
     super(app);
     this.problems = problems;
@@ -7302,7 +7408,7 @@ var AssociateProblemModal = class extends import_obsidian6.Modal {
     const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u5173\u8054\u5230\u5F53\u524D\u9879\u76EE" });
     button.onclick = async () => {
       if (!select.value) {
-        new import_obsidian6.Notice("\u6CA1\u6709\u53EF\u5173\u8054\u7684\u95EE\u9898\u3002");
+        new import_obsidian5.Notice("\u6CA1\u6709\u53EF\u5173\u8054\u7684\u95EE\u9898\u3002");
         return;
       }
       await this.submit(select.value, focus.checked);
@@ -7315,8 +7421,8 @@ var AssociateProblemModal = class extends import_obsidian6.Modal {
 };
 
 // src/ui/modals/edit-goals-modal.ts
-var import_obsidian7 = require("obsidian");
-var EditGoalsModal = class extends import_obsidian7.Modal {
+var import_obsidian6 = require("obsidian");
+var EditGoalsModal = class extends import_obsidian6.Modal {
   constructor(app, initial, submit) {
     super(app);
     this.initial = initial;
@@ -7329,7 +7435,7 @@ var EditGoalsModal = class extends import_obsidian7.Modal {
     const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u4FDD\u5B58\u9636\u6BB5\u76EE\u6807" });
     button.onclick = async () => {
       if (!gate.value.trim() && !milestone.value.trim()) {
-        new import_obsidian7.Notice("\u81F3\u5C11\u586B\u5199\u4E00\u4E2A\u76EE\u6807\u5B57\u6BB5\u3002");
+        new import_obsidian6.Notice("\u81F3\u5C11\u586B\u5199\u4E00\u4E2A\u76EE\u6807\u5B57\u6BB5\u3002");
         return;
       }
       await this.submit({ currentGate: gate.value.trim(), nextMilestone: milestone.value.trim() });
@@ -7343,8 +7449,8 @@ var EditGoalsModal = class extends import_obsidian7.Modal {
 };
 
 // src/ui/modals/edit-task-modal.ts
-var import_obsidian8 = require("obsidian");
-var EditTaskModal = class extends import_obsidian8.Modal {
+var import_obsidian7 = require("obsidian");
+var EditTaskModal = class extends import_obsidian7.Modal {
   constructor(app, initial, submit) {
     super(app);
     this.initial = initial;
@@ -7358,7 +7464,7 @@ var EditTaskModal = class extends import_obsidian8.Modal {
     const button = this.contentEl.createEl("button", { cls: "mod-cta rw-modal-button", text: "\u4FDD\u5B58\u4EFB\u52A1" });
     button.onclick = async () => {
       if (!status.value.trim()) {
-        new import_obsidian8.Notice("\u72B6\u6001\u4E0D\u80FD\u4E3A\u7A7A\u3002");
+        new import_obsidian7.Notice("\u72B6\u6001\u4E0D\u80FD\u4E3A\u7A7A\u3002");
         return;
       }
       await this.submit({ status: status.value.trim(), priority: priority.value.trim(), due: due.value.trim() });
@@ -7370,6 +7476,426 @@ var EditTaskModal = class extends import_obsidian8.Modal {
     this.contentEl.empty();
   }
 };
+
+// src/ui/modals/inbox-capture-modal.ts
+var import_obsidian8 = require("obsidian");
+
+// src/ui/components/association-picker.ts
+function createAssociationPicker(container, options) {
+  let selected = [...options.selected];
+  const root = container.createDiv({ cls: "rw-association-picker rw-form-field" });
+  const label = root.createEl("label", { cls: "rw-form-label", text: options.label });
+  const search = root.createEl("input", { cls: "rw-modal-control", type: "search", placeholder: `\u641C\u7D22${options.label}` });
+  search.setAttribute("aria-label", `\u641C\u7D22${options.label}`);
+  const chips = root.createDiv({ cls: "rw-association-chips" });
+  const list = root.createDiv({ cls: "rw-association-results" });
+  list.setAttribute("role", "group");
+  list.setAttribute("aria-label", options.label);
+  const render = () => {
+    chips.empty();
+    list.empty();
+    for (const link of selected) {
+      const path = resolveAssociationPath(link, options.candidates);
+      const candidate = options.candidates.find((item) => item.path === path);
+      const chip = chips.createSpan({ cls: `rw-source-tag ${candidate ? "" : "is-unresolved"}` });
+      chip.createSpan({ text: `${candidate?.title ?? link}${candidate?.archived ? "\uFF08\u5DF2\u5F52\u6863\uFF09" : candidate ? "" : "\uFF08\u672A\u89E3\u6790\uFF09"}` });
+      const remove = chip.createEl("button", { text: "\xD7", attr: { "aria-label": `\u79FB\u9664\u5173\u8054 ${candidate?.title ?? link}` } });
+      remove.onclick = () => {
+        selected = selected.filter((item) => item !== link);
+        render();
+      };
+    }
+    const query = search.value.trim().toLocaleLowerCase();
+    const choices = options.candidates.filter((item) => (!item.archived || selected.some((link) => resolveAssociationPath(link, options.candidates) === item.path)) && `${item.title} ${item.path}`.toLocaleLowerCase().includes(query));
+    for (const candidate of choices.slice(0, 40)) {
+      const row = list.createEl("label", { cls: "rw-association-option" });
+      const checkbox = row.createEl("input", { type: "checkbox" });
+      checkbox.checked = selected.some((link) => resolveAssociationPath(link, options.candidates) === candidate.path);
+      checkbox.disabled = candidate.archived === true;
+      const body = row.createSpan();
+      body.createEl("strong", { text: candidate.title });
+      body.createEl("small", { text: candidate.path });
+      checkbox.onchange = () => {
+        selected = selected.filter((link) => resolveAssociationPath(link, options.candidates) !== candidate.path);
+        if (checkbox.checked) selected.push(`[[${candidate.path}]]`);
+        render();
+      };
+    }
+    if (!choices.length) list.createEl("small", { cls: "rw-muted", text: "\u6CA1\u6709\u53EF\u9009\u9879\uFF1B\u53EF\u4FDD\u7559\u73B0\u6709\u5173\u8054\u3002" });
+    if (choices.length > 40) list.createEl("small", { cls: "rw-muted", text: "\u8F93\u5165\u66F4\u591A\u5173\u952E\u8BCD\u7F29\u5C0F\u9009\u62E9\u8303\u56F4\u3002" });
+  };
+  label.onclick = () => search.focus();
+  search.oninput = render;
+  render();
+  return { root, getValue: () => [...selected] };
+}
+
+// src/ui/modals/inbox-capture-modal.ts
+var InboxCaptureModal = class extends import_obsidian8.Modal {
+  constructor(app, options) {
+    super(app);
+    this.options = options;
+  }
+  onOpen() {
+    this.titleEl.setText(this.options.mode === "reference" ? "\u5F15\u7528\u5DF2\u6709\u7B14\u8BB0" : "\u65B0\u589E\u8D44\u6599");
+    const form = this.contentEl;
+    const title = createModalField(form, { key: "captureTitle", control: "input", required: true }).input;
+    title.name = "title";
+    const kind = createModalField(form, { key: "captureKind", control: "select" }).input;
+    for (const [value, label] of [["idea", "\u60F3\u6CD5"], ["paper", "\u8BBA\u6587"], ["note", "\u7B14\u8BB0"]]) kind.createEl("option", { value, text: label });
+    kind.value = this.options.kind ?? (this.options.mode === "reference" ? "note" : "idea");
+    kind.name = "kind";
+    let selectedNote;
+    if (this.options.mode === "reference") {
+      const group = form.createDiv({ cls: "rw-form-field" });
+      group.createEl("label", { cls: "rw-form-label", text: "\u9009\u62E9\u539F\u7B14\u8BB0" });
+      const search = group.createEl("input", { cls: "rw-modal-control rw-note-search", type: "search", placeholder: "\u641C\u7D22\u7B14\u8BB0\u6807\u9898\u6216\u8DEF\u5F84" });
+      search.setAttribute("aria-label", "\u641C\u7D22\u5DF2\u6709\u7B14\u8BB0");
+      const selected = group.createDiv({ cls: "rw-reference-selection" });
+      const list = group.createDiv({ cls: "rw-association-results" });
+      const render = () => {
+        list.empty();
+        const query = search.value.trim().toLocaleLowerCase();
+        const choices = this.options.candidates.notes.filter((item) => `${item.title} ${item.path}`.toLocaleLowerCase().includes(query));
+        for (const note of choices.slice(0, 20)) {
+          const button = list.createEl("button", { cls: "rw-note-result", text: `${note.title} \xB7 ${note.path}` });
+          button.type = "button";
+          button.onclick = () => {
+            if (!title.value || title.value === selectedNote?.title) title.value = note.title;
+            selectedNote = note;
+            selected.setText(`\u5DF2\u9009\u62E9\uFF1A${note.path}`);
+          };
+        }
+        if (!choices.length) list.createEl("small", { text: "\u6CA1\u6709\u5339\u914D\u7684\u7B14\u8BB0\u3002" });
+      };
+      search.oninput = render;
+      render();
+    }
+    const content = createModalField(form, { key: "captureContent", control: "textarea" }).input;
+    content.name = "content";
+    const source2 = this.options.mode === "new" ? createModalField(form, { key: "pendingSource", control: "input" }).input : void 0;
+    if (source2) source2.name = "source";
+    const projects = createAssociationPicker(form, { label: "\u5173\u8054\u9879\u76EE\uFF08\u53EF\u9009\uFF09", candidates: this.options.candidates.projects, selected: this.options.context?.projectPath ? [`[[${this.options.context.projectPath}]]`] : [] });
+    const problems = createAssociationPicker(form, { label: "\u5173\u8054\u7814\u7A76\u95EE\u9898\uFF08\u53EF\u9009\uFF09", candidates: this.options.candidates.problems, selected: this.options.context?.problemPath ? [`[[${this.options.context.problemPath}]]`] : [] });
+    const error = form.createDiv({ cls: "rw-form-error" });
+    error.setAttribute("role", "alert");
+    const actions = form.createDiv({ cls: "modal-button-container" });
+    const cancel = actions.createEl("button", { text: "\u53D6\u6D88" });
+    cancel.onclick = () => this.close();
+    const save = actions.createEl("button", { cls: "mod-cta", text: "\u52A0\u5165\u6536\u4EF6\u7BB1" });
+    save.dataset.action = "save";
+    let saving = false;
+    const submit = async () => {
+      if (saving) return;
+      error.setText("");
+      if (!title.value.trim()) {
+        error.setText("\u8BF7\u8F93\u5165\u8D44\u6599\u6807\u9898\u3002");
+        title.focus();
+        return;
+      }
+      if (this.options.mode === "reference" && !selectedNote) {
+        error.setText("\u8BF7\u9009\u62E9\u8981\u5F15\u7528\u7684\u539F\u7B14\u8BB0\u3002");
+        return;
+      }
+      saving = true;
+      save.disabled = true;
+      cancel.disabled = true;
+      try {
+        await this.options.submit({ title: title.value.trim(), kind: kind.value, content: content.value.trim(), sourceValue: selectedNote ? `[[${selectedNote.path}]]` : source2?.value.trim() ?? "", projects: projects.getValue(), problems: problems.getValue() });
+        this.close();
+      } catch (reason) {
+        error.setText(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        saving = false;
+        save.disabled = false;
+        cancel.disabled = false;
+      }
+    };
+    save.onclick = () => void submit();
+    form.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.isComposing) {
+        event.preventDefault();
+        void submit();
+      }
+    });
+    title.focus();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/ui/modals/inbox-associations-modal.ts
+var import_obsidian9 = require("obsidian");
+var InboxAssociationsModal = class extends import_obsidian9.Modal {
+  constructor(app, initial, candidates, submit, options = {}) {
+    super(app);
+    this.initial = initial;
+    this.candidates = candidates;
+    this.submit = submit;
+    this.options = options;
+  }
+  onOpen() {
+    this.titleEl.setText("\u5173\u8054\u9879\u76EE\u4E0E\u7814\u7A76\u95EE\u9898");
+    this.contentEl.createEl("p", { cls: "rw-muted", text: this.options.markLinked ? "\u9009\u62E9\u5173\u8054\u540E\uFF0C\u5C06\u8D44\u6599\u6807\u4E3A\u5DF2\u5173\u8054\u3002" : "\u53EF\u4EE5\u9009\u62E9\u591A\u9879\u3002\u4FDD\u5B58\u5173\u8054\u4F1A\u4FDD\u7559\u8D44\u6599\u5F53\u524D\u7684\u5904\u7406\u72B6\u6001\u3002" });
+    const projects = createAssociationPicker(this.contentEl, { label: "\u9879\u76EE", candidates: this.candidates.projects, selected: this.initial.projects });
+    const problems = createAssociationPicker(this.contentEl, { label: "\u7814\u7A76\u95EE\u9898", candidates: this.candidates.problems, selected: this.initial.problems });
+    const error = this.contentEl.createDiv({ cls: "rw-form-error" });
+    error.setAttribute("role", "alert");
+    const actions = this.contentEl.createDiv({ cls: "modal-button-container" });
+    const cancel = actions.createEl("button", { text: "\u53D6\u6D88" });
+    cancel.onclick = () => this.close();
+    const save = actions.createEl("button", { cls: "mod-cta", text: this.options.markLinked ? "\u4FDD\u5B58\u5173\u8054\u5E76\u5B8C\u6210\u5904\u7406" : "\u4FDD\u5B58\u5173\u8054" });
+    save.dataset.action = "save";
+    save.onclick = async () => {
+      if (save.disabled) return;
+      save.disabled = true;
+      cancel.disabled = true;
+      error.setText("");
+      try {
+        await this.submit({ projects: projects.getValue(), problems: problems.getValue() });
+        this.close();
+      } catch (reason) {
+        error.setText(reason instanceof Error ? reason.message : String(reason));
+      } finally {
+        save.disabled = false;
+        cancel.disabled = false;
+      }
+    };
+  }
+  onClose() {
+    this.contentEl.empty();
+    this.options.onClose?.();
+  }
+};
+
+// src/ui/inbox-writes.ts
+function associationLinks(values) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean).map((value) => value.startsWith("[[") && value.endsWith("]]") ? value : `[[${value}]]`))];
+}
+async function createInboxEntry(app, input, directory) {
+  if (!directory?.trim()) throw new Error("\u8BF7\u5148\u914D\u7F6E\u5F85\u8BA8\u8BBA\u8F93\u5165\u76EE\u5F55\u3002");
+  validateMarkdownPath(`${directory}/entry.md`);
+  const folder = app.vault.getAbstractFileByPath(directory);
+  if (!folder || !("children" in folder)) throw new Error("\u914D\u7F6E\u7684\u5F85\u8BA8\u8BBA\u8F93\u5165\u76EE\u5F55\u4E0D\u5B58\u5728\uFF0C\u8BF7\u5148\u521B\u5EFA\u8BE5\u76EE\u5F55\u3002");
+  const title = input.title.trim();
+  if (!title) throw new Error("\u8BF7\u8F93\u5165\u8D44\u6599\u6807\u9898\u3002");
+  if (!["paper", "idea", "note"].includes(input.kind)) throw new Error("\u8BF7\u9009\u62E9\u8D44\u6599\u7C7B\u578B\u3002");
+  const basename = title.replace(/[\\/:*?"<>|\[\]#^]/g, "-").replace(/^\.+/, "").trim();
+  if (!basename) throw new Error("\u8BF7\u8F93\u5165\u6709\u6548\u7684\u8D44\u6599\u6807\u9898\u3002");
+  let path = `${directory}/${basename}.md`;
+  for (let suffix = 2; app.vault.getAbstractFileByPath(path); suffix++) path = `${directory}/${basename} (${suffix}).md`;
+  validateMarkdownPath(path);
+  const fields = { type: "inbox", title, input_kind: input.kind, pending: true, processing_status: "pending", projects: associationLinks(input.projects), problems: associationLinks(input.problems), source: input.sourceValue.trim() };
+  await app.vault.create(path, `---
+${stringify3(fields).trim()}
+---
+# ${title}
+
+${input.content.trim()}
+`);
+  return path;
+}
+function updateInboxAssociations(app, path, expectedHash, links, completion) {
+  return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
+    if (completion && ![...links.projects, ...links.problems].some((link) => !!resolveAssociationPath(link, completion.validTargets))) throw new Error("\u8BF7\u5148\u5173\u8054\u4E00\u4E2A\u6709\u6548\u7684\u9879\u76EE\u6216\u7814\u7A76\u95EE\u9898\u3002");
+    fm.projects = associationLinks(links.projects);
+    fm.problems = associationLinks(links.problems);
+    delete fm.project;
+    if (completion) {
+      fm.processing_status = "linked";
+      fm.pending = false;
+    }
+  });
+}
+function changeInboxState(app, path, expectedHash, status, validTargets) {
+  return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
+    if (status === "linked" && ![...stringLinks(fm.project), ...stringLinks(fm.projects), ...stringLinks(fm.problems)].some((link) => !!resolveAssociationPath(link, validTargets))) throw new Error("\u8BF7\u5148\u5173\u8054\u4E00\u4E2A\u6709\u6548\u7684\u9879\u76EE\u6216\u7814\u7A76\u95EE\u9898\u3002");
+    fm.processing_status = status;
+    fm.pending = status === "pending";
+  });
+}
+
+// src/ui/property-model.ts
+var PROPERTY_LABELS = { status: "\u72B6\u6001", stage: "\u7814\u7A76\u9636\u6BB5", research_role: "\u8D44\u6E90\u89D2\u8272", tags: "\u6807\u7B7E", current_gate: "\u5F53\u524D\u95E8\u69DB", next_milestone: "\u4E0B\u4E00\u91CC\u7A0B\u7891" };
+var DEFAULT_CHOICES = {
+  status: ["inbox", "proposed", "active", "exploring", "in-progress", "blocked", "completed", "archived"],
+  stage: ["inbox", "analysis", "evaluation", "decision", "completed"],
+  research_role: ["mainline", "probe", "parked"]
+};
+function getPropertySuggestions(files, entity, field) {
+  const values = parseNotes(files).filter((note) => note.frontmatter.type === entity).flatMap((note) => stringLinks(note.frontmatter[field]));
+  return [.../* @__PURE__ */ new Set([...DEFAULT_CHOICES[field] ?? [], ...values])].sort((a, b) => a.localeCompare(b));
+}
+function saveInlineProperty(app, path, expectedHash, field, value) {
+  if (!Object.prototype.hasOwnProperty.call(PROPERTY_LABELS, field)) return Promise.reject(new Error("\u4E0D\u652F\u6301\u4FEE\u6539\u8BE5\u5B57\u6BB5\u3002"));
+  return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
+    if (field === "tags") {
+      if (!Array.isArray(value)) throw new Error("\u6807\u7B7E\u5FC5\u987B\u662F\u5217\u8868\u3002");
+      const tags = [...new Set(value.map((tag) => tag.trim().replace(/^#/, "")).filter(Boolean))];
+      if (tags.some((tag) => /\s/.test(tag))) throw new Error("\u6807\u7B7E\u4E0D\u80FD\u5305\u542B\u7A7A\u683C\u3002");
+      fm.tags = tags;
+      return;
+    }
+    if (typeof value !== "string") throw new Error("\u8BF7\u8F93\u5165\u6587\u672C\u503C\u3002");
+    const text = value.trim();
+    if (field === "current_gate" || field === "next_milestone") {
+      const other = field === "current_gate" ? fm.next_milestone : fm.current_gate;
+      if (!text && !(typeof other === "string" && other.trim())) throw new Error("\u5F53\u524D\u95E8\u69DB\u4E0E\u4E0B\u4E00\u91CC\u7A0B\u7891\u81F3\u5C11\u4FDD\u7559\u4E00\u9879\u3002");
+    } else if (!text) throw new Error(`${PROPERTY_LABELS[field]}\u4E0D\u80FD\u4E3A\u7A7A\u3002`);
+    fm[field] = text;
+  });
+}
+
+// src/ui/components/property-editor.ts
+var activeEditors = /* @__PURE__ */ new WeakMap();
+function openPropertyEditor(anchor, options) {
+  const doc = anchor.ownerDocument;
+  const viewport = doc.defaultView;
+  activeEditors.get(doc)?.();
+  if (activeEditors.has(doc)) return activeEditors.get(doc);
+  const root = doc.body.createDiv({ cls: `rw-property-editor ${viewport.innerWidth < 700 ? "is-mobile" : ""}` });
+  root.setAttribute("role", "dialog");
+  root.setAttribute("aria-label", `\u7F16\u8F91${options.label}`);
+  if (viewport.innerWidth < 700) root.setAttribute("aria-modal", "true");
+  const rect = anchor.getBoundingClientRect();
+  if (viewport.innerWidth >= 700) {
+    root.style.left = `${Math.max(8, Math.min(rect.left, viewport.innerWidth - 340))}px`;
+    root.style.top = `${Math.max(8, Math.min(rect.bottom + 6, viewport.innerHeight - 370))}px`;
+  }
+  root.createEl("strong", { cls: "rw-form-label", text: options.label });
+  root.createEl("small", { cls: "rw-form-description", text: options.mode === "single" ? "\u9009\u62E9\u5DF2\u6709\u503C\uFF0C\u6216\u8F93\u5165\u65B0\u503C\u540E\u6309 Enter \u4FDD\u5B58\u3002" : options.mode === "tags" ? "\u8F93\u5165\u65B0\u6807\u7B7E\u540E\u6309 Enter \u6DFB\u52A0\uFF0C\u518D\u4FDD\u5B58\u3002" : "\u7F16\u8F91\u540E\u4FDD\u5B58\uFF1BCtrl/\u2318 + Enter \u4FDD\u5B58\u3002" });
+  let tags = Array.isArray(options.value) ? [...options.value] : [];
+  const chips = root.createDiv({ cls: "rw-association-chips" });
+  const input = options.mode === "text" ? root.createEl("textarea", { cls: "rw-modal-textarea" }) : root.createEl("input", { cls: "rw-modal-control", type: "text" });
+  input.setAttribute("aria-label", options.label);
+  input.value = typeof options.value === "string" ? options.value : "";
+  const list = root.createDiv({ cls: "rw-property-options" });
+  list.setAttribute("role", "listbox");
+  const error = root.createDiv({ cls: "rw-form-error" });
+  error.setAttribute("role", "alert");
+  const actions = root.createDiv({ cls: "rw-editor-actions" });
+  const cancel = actions.createEl("button", { text: "\u53D6\u6D88" });
+  const save = actions.createEl("button", { text: "\u4FDD\u5B58", cls: "mod-cta" });
+  save.dataset.action = "save";
+  let saving = false;
+  let closed = false;
+  let highlighted = -1;
+  const close = () => {
+    if (closed || saving) return;
+    closed = true;
+    root.remove();
+    doc.removeEventListener("pointerdown", outside, true);
+    doc.removeEventListener("keydown", keydown);
+    if (activeEditors.get(doc) === close) activeEditors.delete(doc);
+    const focus = anchor.isConnected ? anchor : anchor.id ? doc.getElementById(anchor.id) : null;
+    focus?.focus();
+  };
+  const commit = async (value) => {
+    if (saving || closed) return;
+    saving = true;
+    error.setText("");
+    root.setAttribute("aria-busy", "true");
+    root.querySelectorAll("button").forEach((button) => {
+      button.disabled = true;
+    });
+    input.disabled = true;
+    try {
+      await options.onSave(value);
+      saving = false;
+      close();
+    } catch (reason) {
+      saving = false;
+      root.removeAttribute("aria-busy");
+      error.setText(reason instanceof Error ? reason.message : String(reason));
+      root.querySelectorAll("button").forEach((button) => {
+        button.disabled = false;
+      });
+      input.disabled = false;
+      input.focus();
+    }
+  };
+  const addTag = (value) => {
+    const tag = value.trim().replace(/^#/, "");
+    if (tag && !tags.includes(tag)) tags.push(tag);
+    input.value = "";
+    render();
+    input.focus();
+  };
+  const render = () => {
+    chips.empty();
+    list.empty();
+    highlighted = -1;
+    if (options.mode === "tags") for (const tag of tags) {
+      const chip = chips.createSpan({ cls: "rw-source-tag", text: tag });
+      const remove = chip.createEl("button", { text: "\xD7", attr: { "aria-label": `\u79FB\u9664\u6807\u7B7E ${tag}` } });
+      remove.onclick = () => {
+        tags = tags.filter((item) => item !== tag);
+        render();
+      };
+    }
+    if (options.mode !== "text") {
+      const query = input.value.trim().toLocaleLowerCase();
+      const choices = [.../* @__PURE__ */ new Set([...typeof options.value === "string" && options.value ? [options.value] : [], ...options.choices])];
+      for (const choice of choices.filter((item) => item.toLocaleLowerCase().includes(query) && (options.mode !== "tags" || !tags.includes(item))).slice(0, 30)) {
+        const button = list.createEl("button", { cls: "rw-property-option", text: choice, attr: { role: "option", "aria-selected": "false" } });
+        button.type = "button";
+        button.onclick = () => options.mode === "tags" ? addTag(choice) : void commit(choice);
+      }
+    }
+  };
+  const outside = (event) => {
+    if (!root.contains(event.target)) close();
+  };
+  const keydown = (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      return;
+    }
+    if (!root.contains(event.target)) return;
+    if (event.key === "Tab") {
+      const focusable = Array.from(root.querySelectorAll("input,textarea,button")).filter((element) => !element.disabled);
+      const index = focusable.indexOf(doc.activeElement);
+      if (event.shiftKey && index === 0) {
+        event.preventDefault();
+        focusable.at(-1)?.focus();
+      } else if (!event.shiftKey && index === focusable.length - 1) {
+        event.preventDefault();
+        focusable[0]?.focus();
+      }
+    }
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && options.mode !== "text") {
+      event.preventDefault();
+      const buttons = Array.from(list.querySelectorAll("button"));
+      highlighted = !buttons.length ? -1 : highlighted < 0 ? event.key === "ArrowDown" ? 0 : buttons.length - 1 : (highlighted + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+      buttons.forEach((button, index) => button.setAttribute("aria-selected", String(index === highlighted)));
+      return;
+    }
+    if (event.key === "Enter" && event.target === input && !event.isComposing) {
+      if (options.mode === "text" && !event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const selected = list.querySelector("[aria-selected=true]");
+      if (options.mode === "tags") addTag(selected?.textContent ?? input.value);
+      else void commit(selected?.textContent ?? input.value);
+    }
+  };
+  cancel.onclick = close;
+  save.onclick = () => {
+    if (options.mode === "tags" && input.value.trim()) addTag(input.value);
+    void commit(options.mode === "tags" ? tags : input.value);
+  };
+  input.oninput = render;
+  root.onclick = (event) => event.stopPropagation();
+  doc.addEventListener("pointerdown", outside, true);
+  doc.addEventListener("keydown", keydown);
+  activeEditors.set(doc, close);
+  render();
+  input.focus();
+  if (options.mode !== "tags") input.select();
+  return close;
+}
 
 // src/ui/refresh-scheduler.ts
 function createRefreshScheduler(schedule, delayMs = 80) {
@@ -7391,6 +7917,28 @@ function createRefreshScheduler(schedule, delayMs = 80) {
   };
 }
 
+// src/ui/scoped-file-cache.ts
+var ScopedFileCache = class {
+  constructor() {
+    __publicField(this, "contents", /* @__PURE__ */ new Map());
+  }
+  async load(files, read, forcePaths = /* @__PURE__ */ new Set()) {
+    const active = new Set(files.map((file) => file.path));
+    for (const path of this.contents.keys()) if (!active.has(path)) this.contents.delete(path);
+    const out = [];
+    for (const file of files) {
+      const stamp = `${file.stat.mtime}:${file.stat.size ?? ""}`;
+      let entry = this.contents.get(file.path);
+      if (!entry || entry.stamp !== stamp || forcePaths.has(file.path)) {
+        entry = { stamp, file: { path: file.path, content: await read(file), mtime: file.stat.mtime } };
+        this.contents.set(file.path, entry);
+      }
+      out.push(entry.file);
+    }
+    return out;
+  }
+};
+
 // src/ui/problem-candidates.ts
 function getUnassociatedProblemCandidates(files, current, directories) {
   return files.filter((file) => file.path.endsWith(".md") && isPathInDirectories(file.path, directories) && !current.has(file.path)).map((file) => ({ path: file.path, title: file.path.split("/").pop()?.replace(/\.md$/, "") ?? file.path }));
@@ -7398,7 +7946,7 @@ function getUnassociatedProblemCandidates(files, current, directories) {
 
 // src/ui/workbench-view.ts
 var VIEW_TYPE_RESEARCH_WORKBENCH = "research-workbench";
-var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
+var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
   constructor(leaf, dataScope = {}) {
     super(leaf);
     __publicField(this, "dataScope");
@@ -7406,10 +7954,15 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     __publicField(this, "cachedFiles", null);
     __publicField(this, "cachedProjects", []);
     __publicField(this, "cachedEvents", []);
-    __publicField(this, "refreshInFlight", false);
+    __publicField(this, "inbox", []);
+    __publicField(this, "fileCache", new ScopedFileCache());
+    __publicField(this, "dirtyPaths", /* @__PURE__ */ new Set());
+    __publicField(this, "refreshTask", null);
     __publicField(this, "refreshPending", false);
     __publicField(this, "refreshScheduler", null);
     __publicField(this, "queryRenderTimer");
+    __publicField(this, "closePropertyEditor");
+    __publicField(this, "disposed", false);
     __publicField(this, "projectPath", "");
     __publicField(this, "state", { ...DEFAULT_WORKBENCH_STATE, projectPath: this.projectPath });
     this.dataScope = resolveDataScope(dataScope);
@@ -7424,25 +7977,39 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     return "layout-dashboard";
   }
   async onOpen() {
-    this.refreshScheduler = createRefreshScheduler(() => void this.refresh());
+    this.disposed = false;
+    this.refreshScheduler = createRefreshScheduler(() => {
+      if (this.dirtyPaths.size) void this.refresh();
+    });
+    const changed = (path) => {
+      const directories = allDataDirectories(this.dataScope);
+      if (isPathInDirectories(path, directories) || directories.some((directory) => directory.startsWith(`${path}/`))) {
+        this.dirtyPaths.add(path);
+        this.refreshScheduler?.request();
+      }
+    };
     this.registerEvent(this.app.vault.on("modify", (file) => {
-      if (isPathInDirectories(file.path, allDataDirectories(this.dataScope))) this.refreshScheduler?.request();
+      if (file.path.endsWith(".md")) changed(file.path);
     }));
-    this.registerEvent(this.app.vault.on("create", (file) => {
-      if (isPathInDirectories(file.path, allDataDirectories(this.dataScope))) this.refreshScheduler?.request();
-    }));
-    this.registerEvent(this.app.vault.on("delete", (file) => {
-      if (isPathInDirectories(file.path, allDataDirectories(this.dataScope))) this.refreshScheduler?.request();
+    this.registerEvent(this.app.vault.on("create", (file) => changed(file.path)));
+    this.registerEvent(this.app.vault.on("delete", (file) => changed(file.path)));
+    this.registerEvent(this.app.vault.on("rename", (file, oldPath) => {
+      changed(oldPath);
+      changed(file.path);
     }));
     await this.refresh();
   }
   onunload() {
+    this.disposed = true;
     this.refreshScheduler?.dispose();
+    this.closePropertyEditor?.();
     if (this.queryRenderTimer !== void 0) clearTimeout(this.queryRenderTimer);
     this.queryRenderTimer = void 0;
   }
   setDataScope(dataScope) {
-    this.dataScope = resolveDataScope(dataScope);
+    const next = resolveDataScope(dataScope);
+    if (JSON.stringify(next) === JSON.stringify(this.dataScope)) return;
+    this.dataScope = next;
     void this.refresh();
   }
   requireDirectory(key) {
@@ -7452,35 +8019,50 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     return directory;
   }
   async files() {
-    const out = [];
     const directories = allDataDirectories(this.dataScope);
-    for (const file of this.app.vault.getMarkdownFiles()) if (isPathInDirectories(file.path, directories)) out.push({ path: file.path, content: await this.app.vault.read(file), mtime: file.stat.mtime });
-    return out;
+    const files = this.app.vault.getMarkdownFiles().filter((file) => isPathInDirectories(file.path, directories));
+    const forced = new Set(this.dirtyPaths);
+    this.dirtyPaths.clear();
+    return this.fileCache.load(files, (file) => this.app.vault.read(file), forced);
   }
   async refresh() {
-    if (this.refreshInFlight) {
+    if (this.disposed) return;
+    if (this.refreshTask) {
       this.refreshPending = true;
-      return;
+      return this.refreshTask;
     }
-    this.refreshInFlight = true;
+    this.refreshTask = this.loadAndRender();
     try {
-      this.cachedFiles = await this.files();
+      await this.refreshTask;
+    } catch (error) {
+      new import_obsidian10.Notice(String(error));
+    } finally {
+      this.refreshTask = null;
+    }
+  }
+  async loadAndRender() {
+    do {
+      this.refreshPending = false;
+      const files = await this.files();
+      if (this.disposed) return;
+      this.cachedFiles = files;
       this.rebuildCachedSnapshot();
       this.render();
-    } finally {
-      this.refreshInFlight = false;
-      if (this.refreshPending) {
-        this.refreshPending = false;
-        void this.refresh();
-      }
-    }
+    } while (!this.disposed && (this.refreshPending || this.dirtyPaths.size));
+  }
+  async refreshAffected(...paths) {
+    paths.forEach((path) => this.dirtyPaths.add(path));
+    await this.refresh();
   }
   rebuildCachedSnapshot() {
     if (!this.cachedFiles) return;
+    this.inbox = buildInboxIndex(this.cachedFiles, { inputDirectories: this.dataScope.inputDirectories, includeArchived: this.state.includeArchived });
     this.cachedProjects = buildProjectIndex(this.cachedFiles, { includeArchived: this.state.includeArchived, projectDirectories: this.dataScope.projectDirectories });
     if (!this.cachedProjects.length) {
       this.snapshot = null;
       this.cachedEvents = [];
+      this.projectPath = "";
+      this.state.projectPath = "";
       return;
     }
     if (!this.cachedProjects.some((project) => project.path === this.projectPath)) this.projectPath = this.cachedProjects[0].path;
@@ -7488,10 +8070,22 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     this.snapshot = buildProjectSnapshot(this.cachedFiles, this.projectPath, { includeArchived: this.state.includeArchived, ...this.dataScope });
     this.cachedEvents = buildTimelineEvents(this.cachedFiles, this.snapshot, { recordDirectories: this.dataScope.recordDirectories });
   }
-  async setFrontmatter(path, mutate) {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian9.TFile)) throw new Error(`Missing ${path}`);
-    await this.app.fileManager.processFrontMatter(file, mutate);
+  captureContext(context) {
+    if (context?.problemPath) return { ...context, projectPath: context.projectPath ?? (this.snapshot?.problems.some((problem) => problem.path === context.problemPath) ? this.projectPath : void 0) };
+    if (context) return context;
+    if (this.state.panel === "inbox") {
+      const association = this.state.inboxAssociation;
+      return association?.kind === "project" ? { projectPath: association.path } : association ? this.captureContext({ problemPath: association.path }) : {};
+    }
+    return this.projectPath ? { projectPath: this.projectPath } : {};
+  }
+  candidates() {
+    const files = this.cachedFiles ?? [];
+    return {
+      projects: buildProjectIndex(files, { includeArchived: true, projectDirectories: this.dataScope.projectDirectories }),
+      problems: parseNotes(files.filter((file) => isPathInDirectories(file.path, this.dataScope.problemDirectories))).filter((note) => note.frontmatter.type === "problem").map((note) => ({ path: note.path, title: titleFor(note), archived: note.frontmatter.archived === true || note.frontmatter.status === "archived" })),
+      notes: this.app.vault.getMarkdownFiles().map((file) => ({ path: file.path, title: file.basename }))
+    };
   }
   actions() {
     return {
@@ -7503,6 +8097,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
       },
       selectPanel: (panel) => {
         this.state.panel = panel;
+        if (panel === "inbox") this.state.inboxAssociation = null;
         this.renderCurrent();
       },
       setProblemFilter: (filter) => {
@@ -7546,104 +8141,162 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
       openTask: (path) => void this.openFile(path),
       editTask: (path) => void this.editTask(path),
       associateProblem: () => void this.associateProblem(),
-      recordIdea: () => void this.createPending(),
+      recordIdea: (context) => void this.openCapture("new", this.captureContext(context)),
+      addExistingNote: (context) => void this.openCapture("reference", this.captureContext(context)),
       openGoals: () => {
         this.state.panel = "goals";
         this.renderCurrent();
       },
+      editGoals: () => void this.editGoals(),
       openRecords: () => {
         this.state.panel = "records";
         this.renderCurrent();
       },
-      openInbox: () => {
-        this.state.panel = "inbox";
-        this.renderCurrent();
-      },
+      openInbox: () => this.viewMaterial("project", this.projectPath),
       archive: (path) => void this.archive(path),
       edit: (path) => void this.editProblem(path),
+      editProperty: (path, entity, field, anchor) => void this.editInlineProperty(path, entity, field, anchor).catch((error) => new import_obsidian10.Notice(String(error))),
       toggleFocus: (problem) => void this.toggleFocus(problem.path, problem.focus),
       openEvent: (event) => void this.openFile(event.path),
       openPending: (input) => void this.openFile(input.path),
-      transitionPending: (input, status) => void this.transitionPending(input.path, status)
+      transitionPending: (input, status) => void this.transitionPending(input.path, status),
+      openSource: (entry) => this.openSource(entry),
+      editInputAssociations: (entry) => void this.editInputAssociations(entry).catch((error) => new import_obsidian10.Notice(String(error))),
+      viewMaterial: (kind, path) => this.viewMaterial(kind, path),
+      setInboxView: (view) => {
+        this.state.inboxView = view;
+        this.renderCurrent();
+      },
+      setInboxKind: (kind) => {
+        this.state.inboxKind = kind;
+        this.renderCurrent();
+      },
+      clearInboxAssociation: () => {
+        this.state.inboxAssociation = null;
+        this.renderCurrent();
+      }
     };
+  }
+  viewMaterial(kind, path) {
+    this.state.panel = "inbox";
+    this.state.inboxAssociation = path ? { kind, path } : null;
+    this.state.inboxView = "all";
+    this.renderCurrent();
   }
   renderCurrent() {
-    if (!this.cachedFiles) return;
-    this.render();
+    if (this.cachedFiles && !this.disposed) this.render();
   }
-  render(projects = this.cachedProjects, events = this.cachedEvents) {
-    if (!this.snapshot) {
-      this.contentEl.setText(this.dataScope.projectDirectories.length ? "\u914D\u7F6E\u76EE\u5F55\u4E2D\u6CA1\u6709\u7814\u7A76\u9879\u76EE\u3002" : "\u8BF7\u5728 Project Workbench \u8BBE\u7F6E\u4E2D\u914D\u7F6E\u6570\u636E\u76EE\u5F55\u3002");
+  render() {
+    let inboxProblemPaths = [];
+    const association = this.state.inboxAssociation;
+    if (association?.kind === "project" && this.cachedFiles && this.cachedProjects.some((project) => project.path === association.path)) inboxProblemPaths = buildProjectSnapshot(this.cachedFiles, association.path, { includeArchived: true, ...this.dataScope }).problems.map((problem) => problem.path);
+    renderWorkbench(this.contentEl, { state: this.state, projects: this.cachedProjects, snapshot: this.snapshot, events: this.cachedEvents, inbox: this.inbox, files: this.cachedFiles ?? [], inboxProblemPaths, inputConfigured: this.dataScope.inputDirectories.length > 0 }, this.actions());
+  }
+  async openCapture(mode, context = {}) {
+    let directory;
+    try {
+      directory = this.requireDirectory("inputDirectories");
+    } catch (error) {
+      new import_obsidian10.Notice(String(error));
       return;
     }
-    if (this.state.panel === "workspace") {
-      renderWorkbench(this.contentEl, { state: this.state, projects, snapshot: this.snapshot, events }, this.actions());
+    new InboxCaptureModal(this.app, { mode, kind: mode === "new" ? "idea" : "note", context, candidates: this.candidates(), submit: async (input) => {
+      const path = await createInboxEntry(this.app, input, directory);
+      await this.refreshAffected(path);
+    } }).open();
+  }
+  async editInlineProperty(path, entity, field, anchor) {
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) throw new Error("\u7B14\u8BB0\u5DF2\u4E0D\u5B58\u5728\uFF0C\u8BF7\u91CD\u65B0\u52A0\u8F7D\u3002");
+    const raw = await this.app.vault.read(file);
+    if (!anchor.isConnected || this.disposed) return;
+    const fm = parseNote({ path, content: raw }).frontmatter;
+    const expectedHash = sha256(raw);
+    const value = field === "tags" ? stringLinks(fm.tags) : typeof fm[field] === "string" ? fm[field] : "";
+    this.closePropertyEditor = openPropertyEditor(anchor, {
+      label: PROPERTY_LABELS[field],
+      mode: field === "tags" ? "tags" : field === "current_gate" || field === "next_milestone" ? "text" : "single",
+      value,
+      choices: getPropertySuggestions((this.cachedFiles ?? []).filter((item) => isPathInDirectories(item.path, entity === "project" ? this.dataScope.projectDirectories : this.dataScope.problemDirectories)), entity, field),
+      onSave: async (value2) => {
+        await saveInlineProperty(this.app, path, expectedHash, field, value2);
+        await this.refreshAffected(path);
+      }
+    });
+  }
+  async editInputAssociations(entry, markLinked = false) {
+    const file = this.app.vault.getFileByPath(entry.path);
+    if (!file) throw new Error("\u8D44\u6599\u7B14\u8BB0\u5DF2\u4E0D\u5B58\u5728\u3002");
+    const raw = await this.app.vault.read(file);
+    const current = buildInboxIndex([{ path: entry.path, content: raw }], { includeArchived: true })[0];
+    if (!current) throw new Error("\u8D44\u6599\u8BB0\u5F55\u5DF2\u6539\u53D8\uFF0C\u8BF7\u91CD\u65B0\u52A0\u8F7D\u3002");
+    const expectedHash = sha256(raw);
+    const candidates = this.candidates();
+    new InboxAssociationsModal(this.app, current, candidates, async (links) => {
+      await updateInboxAssociations(this.app, entry.path, expectedHash, links, markLinked ? { status: "linked", validTargets: [...candidates.projects, ...candidates.problems] } : void 0);
+      await this.refreshAffected(entry.path);
+    }, { markLinked, onClose: () => this.renderCurrent() }).open();
+  }
+  openSource(entry) {
+    const value = entry.sourceValue?.trim();
+    if (!value) return;
+    if (/^https?:\/\//i.test(value)) {
+      window.open(value, "_blank", "noopener,noreferrer");
       return;
     }
-    this.contentEl.empty();
-    const shell = this.contentEl.createDiv({ cls: `research-workbench rw-shell rw-density-${this.state.density}` });
-    const header = shell.createDiv({ cls: "rw-topbar" });
-    header.createEl("strong", { text: "\u7814\u7A76\u5DE5\u4F5C\u53F0" });
-    const back = header.createEl("button", { cls: "rw-button", text: "\u2190 \u8FD4\u56DE\u9879\u76EE\u5DE5\u4F5C\u53F0" });
-    back.onclick = () => {
-      this.state.panel = "workspace";
-      this.renderCurrent();
-    };
-    const main = shell.createDiv({ cls: "rw-panel-main" });
-    if (this.state.panel === "goals") renderGoalsPanel(main, this.snapshot, () => void this.editGoals());
-    else if (this.state.panel === "records") renderRecordsPanel(main, this.snapshot, (path) => void this.openFile(path));
-    else if (this.state.panel === "inbox") renderInboxPanel(main, this.snapshot.pendingInputs, (path) => void this.openFile(path));
-    else renderProjectNotePanel(main, this.snapshot, () => void this.openFile(this.snapshot?.project.path ?? this.projectPath));
+    const path = resolveAssociationPath(value, this.app.vault.getMarkdownFiles());
+    if (path) void this.openFile(path);
+    else new import_obsidian10.Notice("\u65E0\u6CD5\u627E\u5230\u5173\u8054\u7684\u6765\u6E90\u7B14\u8BB0\u3002");
   }
   async openFile(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof import_obsidian9.TFile) await this.app.workspace.getLeaf("tab").openFile(file);
+    if (file instanceof import_obsidian10.TFile) await this.app.workspace.getLeaf("tab").openFile(file);
   }
   async toggleFocus(problemPath, currentlyFocused) {
     const project = this.app.vault.getAbstractFileByPath(this.projectPath);
-    if (!(project instanceof import_obsidian9.TFile)) return;
+    if (!(project instanceof import_obsidian10.TFile)) return;
     const raw = await this.app.vault.read(project);
     try {
       await writeFrontmatterWithExpectedHash(this.app, this.projectPath, sha256(raw), (frontmatter) => {
         const current = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value) => typeof value === "string") : [];
         const file = this.app.vault.getAbstractFileByPath(problemPath);
-        const title = file instanceof import_obsidian9.TFile ? file.basename : problemPath.split("/").pop()?.replace(/\.md$/, "") ?? problemPath;
+        const title = file instanceof import_obsidian10.TFile ? file.basename : problemPath.split("/").pop()?.replace(/\.md$/, "") ?? problemPath;
         const link = `[[${title}]]`;
         frontmatter.focus_problems = currentlyFocused ? current.filter((value) => value !== link) : [.../* @__PURE__ */ new Set([...current, link])];
       });
       await this.refresh();
     } catch (error) {
-      new import_obsidian9.Notice(String(error));
+      new import_obsidian10.Notice(String(error));
     }
   }
   async archive(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian9.TFile)) return;
+    if (!(file instanceof import_obsidian10.TFile)) return;
     try {
       await archiveEntity(this.app, path, sha256(await this.app.vault.read(file)));
       await this.refresh();
     } catch (error) {
-      new import_obsidian9.Notice(String(error));
+      new import_obsidian10.Notice(String(error));
     }
   }
   showProjectContextMenu(path, event) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian9.TFile)) return;
-    const menu = new import_obsidian9.Menu();
+    if (!(file instanceof import_obsidian10.TFile)) return;
+    const menu = new import_obsidian10.Menu();
     menu.addItem((item) => item.setTitle("\u6253\u5F00\u9879\u76EE\u7B14\u8BB0").setIcon("file-text").onClick(() => void this.openFile(path)));
     menu.addItem((item) => item.setTitle("\u5F52\u6863\u9879\u76EE").setIcon("archive").onClick(async () => {
       try {
         await archiveEntity(this.app, path, sha256(await this.app.vault.read(file)));
         await this.refresh();
       } catch (error) {
-        new import_obsidian9.Notice(String(error));
+        new import_obsidian10.Notice(String(error));
       }
     }));
     menu.addItem((item) => item.setTitle("\u5220\u9664\u9879\u76EE").setIcon("trash-2").setWarning(true).onClick(() => void this.confirmDeleteProject(file)));
     menu.showAtMouseEvent(event);
   }
   async confirmDeleteProject(file) {
-    const modal = new import_obsidian9.ConfirmationModal(this.app);
+    const modal = new import_obsidian10.ConfirmationModal(this.app);
     modal.setContent(`\u786E\u5B9A\u5220\u9664\u9879\u76EE\u201C${file.basename}\u201D\u5417\uFF1F
 
 \u53EA\u5220\u9664\u9879\u76EE\u6587\u4EF6\uFF0C\u4E0D\u5220\u9664\u5173\u8054\u7684\u95EE\u9898\u3001\u4EFB\u52A1\u6216\u8D44\u6599\u3002`);
@@ -7652,7 +8305,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
         await this.app.vault.adapter.remove(file.path);
         await this.refresh();
       } catch (error) {
-        new import_obsidian9.Notice(String(error));
+        new import_obsidian10.Notice(String(error));
       }
     }));
     modal.addCancelButton("\u53D6\u6D88");
@@ -7660,7 +8313,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
   }
   async editProblem(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian9.TFile)) return;
+    if (!(file instanceof import_obsidian10.TFile)) return;
     const cache = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     new EditProblemModal(this.app, { status: String(cache.status ?? "exploring"), stage: String(cache.stage ?? "inbox"), researchRole: String(cache.research_role ?? "mainline") }, async (result) => {
       try {
@@ -7671,14 +8324,14 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
         });
         await this.refresh();
       } catch (error) {
-        new import_obsidian9.Notice(String(error));
+        new import_obsidian10.Notice(String(error));
       }
     }).open();
   }
   async editGoals() {
     if (!this.snapshot) return;
     const file = this.app.vault.getAbstractFileByPath(this.projectPath);
-    if (!(file instanceof import_obsidian9.TFile)) return;
+    if (!(file instanceof import_obsidian10.TFile)) return;
     new EditGoalsModal(this.app, { currentGate: this.snapshot.project.currentGate ?? "", nextMilestone: this.snapshot.project.nextMilestone ?? "" }, async (result) => {
       try {
         await writeFrontmatterWithExpectedHash(this.app, this.projectPath, sha256(await this.app.vault.read(file)), (frontmatter) => {
@@ -7687,20 +8340,20 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
         });
         await this.refresh();
       } catch (error) {
-        new import_obsidian9.Notice(String(error));
+        new import_obsidian10.Notice(String(error));
       }
     }).open();
   }
   async editTask(path) {
     const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian9.TFile)) return;
+    if (!(file instanceof import_obsidian10.TFile)) return;
     const cache = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     new EditTaskModal(this.app, { status: String(cache.status ?? "open"), priority: String(cache.priority ?? ""), due: String(cache.due ?? "") }, async (result) => {
       try {
         await updateTask(this.app, path, result, sha256(await this.app.vault.read(file)));
         await this.refresh();
       } catch (error) {
-        new import_obsidian9.Notice(String(error));
+        new import_obsidian10.Notice(String(error));
       }
     }).open();
   }
@@ -7710,12 +8363,12 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     const candidates = getUnassociatedProblemCandidates(files, current, this.dataScope.problemDirectories);
     new AssociateProblemModal(this.app, candidates, async (problemPath, focus) => {
       const project = this.app.vault.getAbstractFileByPath(this.projectPath);
-      if (!(project instanceof import_obsidian9.TFile)) return;
+      if (!(project instanceof import_obsidian10.TFile)) return;
       try {
         await linkExistingProblemToProject(this.app, this.projectPath, problemPath, { focus, expectedHash: sha256(await this.app.vault.read(project)) });
         await this.refresh();
       } catch (error) {
-        new import_obsidian9.Notice(String(error));
+        new import_obsidian10.Notice(String(error));
       }
     }).open();
   }
@@ -7724,7 +8377,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
       this.requireDirectory("projectDirectories");
       this.requireDirectory("problemDirectories");
     } catch (error) {
-      new import_obsidian9.Notice(String(error));
+      new import_obsidian10.Notice(String(error));
       return;
     }
     new ProjectWizard(this.app, async (result) => {
@@ -7739,7 +8392,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     try {
       this.requireDirectory("problemDirectories");
     } catch (error) {
-      new import_obsidian9.Notice(String(error));
+      new import_obsidian10.Notice(String(error));
       return;
     }
     new ProblemModal(this.app, async (result) => {
@@ -7754,7 +8407,7 @@ var ResearchWorkbenchView = class extends import_obsidian9.ItemView {
     try {
       directory = this.requireDirectory("taskDirectories");
     } catch (error) {
-      new import_obsidian9.Notice(String(error));
+      new import_obsidian10.Notice(String(error));
       return;
     }
     new TaskModal(this.app, async (title) => {
@@ -7769,50 +8422,46 @@ projects: ["[[${this.snapshot?.project.title ?? "Project"}]]"]
       await this.refresh();
     }).open();
   }
+  async openGlobalInbox() {
+    this.state.panel = "inbox";
+    this.state.inboxAssociation = null;
+    this.renderCurrent();
+  }
+  async captureExistingNote() {
+    await this.openCapture("reference", {});
+  }
   async createPending() {
-    let directory;
-    try {
-      directory = this.requireDirectory("inputDirectories");
-    } catch (error) {
-      new import_obsidian9.Notice(String(error));
-      return;
-    }
-    new PendingModal(this.app, async (text, source2) => {
-      const path = `${directory}/${Date.now()}-pending.md`;
-      await this.app.vault.create(path, `---
-type: idea
-project: "[[${this.snapshot?.project.title ?? "Project"}]]"
-pending: true
-processing_status: pending
-source: ${JSON.stringify(source2)}
----
-# Pending discussion
-
-${text}
-`);
-      await this.refresh();
-    }).open();
+    await this.openCapture("new", {});
   }
   async transitionPending(path, status) {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof import_obsidian9.TFile)) return;
+    const file = this.app.vault.getFileByPath(path);
+    if (!file) return;
     try {
-      await updatePendingInput(this.app, path, status, sha256(await this.app.vault.read(file)));
-      await this.refresh();
+      const raw = await this.app.vault.read(file);
+      const entry = buildInboxIndex([{ path, content: raw }], { includeArchived: true })[0];
+      const candidates = this.candidates();
+      const targets = [...candidates.projects, ...candidates.problems];
+      if (status === "linked" && entry && ![...entry.projects, ...entry.problems].some((link) => resolveAssociationPath(link, targets))) {
+        await this.editInputAssociations(entry, true);
+        return;
+      }
+      await changeInboxState(this.app, path, sha256(raw), status, targets);
+      await this.refreshAffected(path);
     } catch (error) {
-      new import_obsidian9.Notice(String(error));
+      new import_obsidian10.Notice(String(error));
+      this.renderCurrent();
     }
   }
 };
 
 // src/ui/settings.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/ui/settings-model.ts
 var DEFAULT_SETTINGS = { density: "comfortable", accentMode: "theme", tagMode: "full", rightRail: "fixed", iconStyle: "linear", ...DEFAULT_DATA_SCOPE };
 
 // src/ui/settings.ts
-var ResearchWorkbenchSettingTab = class extends import_obsidian10.PluginSettingTab {
+var ResearchWorkbenchSettingTab = class extends import_obsidian11.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     __publicField(this, "workbenchPlugin");
@@ -7821,30 +8470,30 @@ var ResearchWorkbenchSettingTab = class extends import_obsidian10.PluginSettingT
   display() {
     const plugin = this.workbenchPlugin;
     this.containerEl.empty();
-    new import_obsidian10.Setting(this.containerEl).setName("Appearance").setHeading();
-    new import_obsidian10.Setting(this.containerEl).setName("\u4FE1\u606F\u5BC6\u5EA6").addDropdown((dropdown) => dropdown.addOptions({ comfortable: "\u8212\u9002", standard: "\u6807\u51C6", compact: "\u7D27\u51D1" }).setValue(plugin.settings.density).onChange(async (value) => {
+    new import_obsidian11.Setting(this.containerEl).setName("Appearance").setHeading();
+    new import_obsidian11.Setting(this.containerEl).setName("\u4FE1\u606F\u5BC6\u5EA6").addDropdown((dropdown) => dropdown.addOptions({ comfortable: "\u8212\u9002", standard: "\u6807\u51C6", compact: "\u7D27\u51D1" }).setValue(plugin.settings.density).onChange(async (value) => {
       plugin.settings.density = value;
       await plugin.saveSettings();
     }));
-    new import_obsidian10.Setting(this.containerEl).setName("\u5F3A\u8C03\u8272").addDropdown((dropdown) => dropdown.addOptions({ theme: "\u8DDF\u968F Obsidian", indigo: "\u975B\u7D2B" }).setValue(plugin.settings.accentMode).onChange(async (value) => {
+    new import_obsidian11.Setting(this.containerEl).setName("\u5F3A\u8C03\u8272").addDropdown((dropdown) => dropdown.addOptions({ theme: "\u8DDF\u968F Obsidian", indigo: "\u975B\u7D2B" }).setValue(plugin.settings.accentMode).onChange(async (value) => {
       plugin.settings.accentMode = value;
       await plugin.saveSettings();
     }));
-    new import_obsidian10.Setting(this.containerEl).setName("\u6807\u7B7E\u663E\u793A").addDropdown((dropdown) => dropdown.addOptions({ full: "\u5B8C\u6574", compact: "\u7D27\u51D1", icon: "\u53EA\u663E\u793A\u56FE\u6807" }).setValue(plugin.settings.tagMode).onChange(async (value) => {
+    new import_obsidian11.Setting(this.containerEl).setName("\u6807\u7B7E\u663E\u793A").addDropdown((dropdown) => dropdown.addOptions({ full: "\u5B8C\u6574", compact: "\u7D27\u51D1", icon: "\u53EA\u663E\u793A\u56FE\u6807" }).setValue(plugin.settings.tagMode).onChange(async (value) => {
       plugin.settings.tagMode = value;
       await plugin.saveSettings();
     }));
-    new import_obsidian10.Setting(this.containerEl).setName("\u53F3\u680F").addDropdown((dropdown) => dropdown.addOptions({ fixed: "\u56FA\u5B9A", collapsible: "\u53EF\u6298\u53E0", stacked: "\u7A84\u5C4F\u5806\u53E0" }).setValue(plugin.settings.rightRail).onChange(async (value) => {
+    new import_obsidian11.Setting(this.containerEl).setName("\u53F3\u680F").addDropdown((dropdown) => dropdown.addOptions({ fixed: "\u56FA\u5B9A", collapsible: "\u53EF\u6298\u53E0", stacked: "\u7A84\u5C4F\u5806\u53E0" }).setValue(plugin.settings.rightRail).onChange(async (value) => {
       plugin.settings.rightRail = value;
       await plugin.saveSettings();
     }));
-    new import_obsidian10.Setting(this.containerEl).setName("\u56FE\u6807\u98CE\u683C").addDropdown((dropdown) => dropdown.addOptions({ linear: "\u7EBF\u6027", solid: "\u5B9E\u5FC3" }).setValue(plugin.settings.iconStyle).onChange(async (value) => {
+    new import_obsidian11.Setting(this.containerEl).setName("\u56FE\u6807\u98CE\u683C").addDropdown((dropdown) => dropdown.addOptions({ linear: "\u7EBF\u6027", solid: "\u5B9E\u5FC3" }).setValue(plugin.settings.iconStyle).onChange(async (value) => {
       plugin.settings.iconStyle = value;
       await plugin.saveSettings();
     }));
-    new import_obsidian10.Setting(this.containerEl).setName("Data scope").setHeading();
+    new import_obsidian11.Setting(this.containerEl).setName("Data scope").setHeading();
     const directorySetting = (name, description, key) => {
-      new import_obsidian10.Setting(this.containerEl).setName(name).setDesc(description).addText((text) => text.setValue(plugin.settings[key].join(", ")).onChange(async (value) => {
+      new import_obsidian11.Setting(this.containerEl).setName(name).setDesc(description).addText((text) => text.setValue(plugin.settings[key].join(", ")).onChange(async (value) => {
         const directories = normalizeDirectoryList(value);
         plugin.settings[key] = directories;
         await plugin.saveSettings();
@@ -7859,7 +8508,7 @@ var ResearchWorkbenchSettingTab = class extends import_obsidian10.PluginSettingT
 };
 
 // src/main.ts
-var ResearchWorkbenchPlugin = class extends import_obsidian11.Plugin {
+var ResearchWorkbenchPlugin = class extends import_obsidian12.Plugin {
   constructor() {
     super(...arguments);
     __publicField(this, "settings", { ...DEFAULT_SETTINGS });
@@ -7873,6 +8522,8 @@ var ResearchWorkbenchPlugin = class extends import_obsidian11.Plugin {
     this.addCommand({ id: "create-problem", name: "Create problem", callback: () => void this.withView((view) => view.createProblem()) });
     this.addCommand({ id: "create-task", name: "Create task", callback: () => void this.withView((view) => view.createTask()) });
     this.addCommand({ id: "record-idea", name: "Record idea", callback: () => void this.withView((view) => view.createPending()) });
+    this.addCommand({ id: "open-inbox", name: "Open inbox", callback: () => void this.withView((view) => view.openGlobalInbox()) });
+    this.addCommand({ id: "reference-note", name: "Add existing note to inbox", callback: () => void this.withView((view) => view.captureExistingNote()) });
   }
   async saveSettings() {
     await this.saveData(this.settings);
