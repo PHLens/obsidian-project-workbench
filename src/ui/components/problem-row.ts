@@ -5,7 +5,7 @@ import { renderPropertyButton } from './property-button';
 export function renderProblemRow(container: HTMLElement, problem: ProblemSummary, actions: WorkbenchActions): HTMLElement {
   const row = container.createDiv({ cls: `rw-problem-row ${problem.focus ? 'is-focus' : ''} ${problem.archived ? 'is-archived' : ''}` }); row.onclick = () => actions.openProblem(problem);
   const icon = row.createSpan({ cls: 'rw-problem-type-icon' }); renderIcon(icon, problem.focus ? 'target' : 'git-branch'); icon.setAttribute('aria-hidden', 'true');
-  const body = row.createDiv({ cls: 'rw-problem-main' }); const identity = body.createDiv({ cls: 'rw-problem-identity' }); identity.createEl('strong', { text: problem.title });
+  const body = row.createDiv({ cls: 'rw-problem-main' }); const identity = body.createDiv({ cls: 'rw-problem-identity' }); identity.createEl('strong', { text: problem.title, attr: { title: problem.title } });
   renderPropertyButton(identity, { path: problem.path, field: 'status', label: '问题状态', value: problem.status ?? '', className: 'rw-status', onEdit: (anchor) => actions.editProperty(problem.path, 'problem', 'status', anchor) });
   body.createEl('p', { cls: 'rw-problem-summary', text: problem.summary ?? problem.nextSteps[0] ?? '理解待补充' });
   const meta = body.createDiv({ cls: 'rw-problem-meta' });

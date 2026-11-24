@@ -1,3 +1,4 @@
+import { linkMatches } from '../model/types';
 import { ItemView, Notice, TFile, WorkspaceLeaf, Menu, ConfirmationModal, type EventRef } from 'obsidian';
 import { buildProjectIndex, buildProjectSnapshot, buildTimelineEvents } from '../model/project-snapshot';
 import { parseNote, parseNotes, primeParsedNotes, titleFor } from '../model/frontmatter';
@@ -233,9 +234,10 @@ export class ResearchWorkbenchView extends ItemView {
   private async toggleFocus(problemPath: string, currentlyFocused: boolean): Promise<void> {
     const project = this.app.vault.getAbstractFileByPath(this.projectPath); if (!(project instanceof TFile)) return; const raw = await this.app.vault.read(project);
     try { await writeFrontmatterWithExpectedHash(this.app, this.projectPath, sha256(raw), (frontmatter) => {
-      const current = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value): value is string => typeof value === 'string') : [];
-      const file = this.app.vault.getAbstractFileByPath(problemPath); const title = file instanceof TFile ? file.basename : problemPath.split('/').pop()?.replace(/\.md$/, '') ?? problemPath; const link = `[[${title}]]`;
-      frontmatter.focus_problems = currentlyFocused ? current.filter((value) => value !== link) : [...new Set([...current, link])];
+      const current = stringLinks(frontmatter.focus_problems);
+      const notes = parseNotes(this.cachedFiles ?? []);
+      const matches = (value: string) => linkMatches(value, problemPath, notes);
+      frontmatter.focus_problems = currentlyFocused ? current.filter((value) => !matches(value)) : current.some(matches) ? current : [...current, `[[${problemPath}]]`];
     }); await this.refresh(); } catch (error) { new Notice(String(error)); }
   }
   private async archive(path: string): Promise<void> {

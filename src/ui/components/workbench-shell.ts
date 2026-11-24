@@ -6,7 +6,7 @@ import type { CaptureContext } from '../modals/inbox-capture-modal';
 import type { EditableProperty, EntityKind } from '../property-model';
 import { renderProjectSidebar } from './project-sidebar';
 import { renderMainHeader } from './main-header';
-import { renderProblemTable } from './problem-table';
+import { getProblemDisplayOrder, renderProblemTable } from './problem-table';
 import { renderFocusPanel } from './focus-panel';
 import { renderTimeline } from './recent-timeline';
 import { renderPendingInbox } from './pending-inbox';
@@ -68,7 +68,7 @@ export interface WorkbenchRenderContext {
 export interface WorkbenchLayoutState { regions: string[]; navigation: string[]; actions: string[]; problemRows: Array<{ title: string; status?: string; focus: boolean; source: string }>; emptyProblemState: boolean; }
 export function getWorkbenchLayoutState(context: WorkbenchRenderContext): WorkbenchLayoutState {
   return { regions: ['topbar', 'project-sidebar', 'main-workspace', 'focus-panel', 'recent-timeline', 'pending-inbox'], navigation: ['项目工作台', '阶段目标', '进展记录', '收件箱', '项目笔记'], actions: ['新建项目', '记录想法', '新建问题', '从已有问题关联'],
-    problemRows: (context.snapshot?.problems ?? []).map((problem) => ({ title: problem.title, status: problem.status, focus: problem.focus, source: problem.source.kind })), emptyProblemState: !context.snapshot?.problems.length };
+    problemRows: getProblemDisplayOrder(context.snapshot?.problems ?? [], context.state.problemFilter).map((problem) => ({ title: problem.title, status: problem.status, focus: problem.focus, source: problem.source.kind })), emptyProblemState: !context.snapshot?.problems.length };
 }
 export function renderWorkbench(container: HTMLElement, context: WorkbenchRenderContext, actions: WorkbenchActions): HTMLElement {
   const active = container.ownerDocument.activeElement;
