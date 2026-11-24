@@ -2,6 +2,8 @@ import { App, Modal } from 'obsidian';
 import type { InboxAssociations } from '../inbox-writes';
 import { createAssociationPicker, type AssociationCandidate } from '../components/association-picker';
 export class InboxAssociationsModal extends Modal {
+  private saving = false;
+  close(): void { if (!this.saving) super.close(); }
   constructor(app: App, private readonly initial: InboxAssociations, private readonly candidates: { projects: AssociationCandidate[]; problems: AssociationCandidate[] }, private readonly submit: (links: InboxAssociations) => Promise<void>, private readonly options: { markLinked?: boolean; onClose?: () => void } = {}) { super(app); }
   onOpen(): void {
     this.titleEl.setText('关联项目与研究问题');
@@ -12,10 +14,13 @@ export class InboxAssociationsModal extends Modal {
     const actions = this.contentEl.createDiv({ cls: 'modal-button-container' }); const cancel = actions.createEl('button', { text: '取消' }); cancel.onclick = () => this.close();
     const save = actions.createEl('button', { cls: 'mod-cta', text: this.options.markLinked ? '保存关联并完成处理' : '保存关联' }); save.dataset.action = 'save';
     save.onclick = async () => {
-      if (save.disabled) return; save.disabled = true; cancel.disabled = true; error.setText('');
-      try { await this.submit({ projects: projects.getValue(), problems: problems.getValue() }); this.close(); }
+      if (save.disabled) return; this.saving = true; error.setText('');
+      const controls = Array.from(this.contentEl.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button'));
+      const disabled = controls.map((control) => control.disabled);
+      controls.forEach((control) => { control.disabled = true; });
+      try { await this.submit({ projects: projects.getValue(), problems: problems.getValue() }); this.saving = false; this.close(); }
       catch (reason) { error.setText(reason instanceof Error ? reason.message : String(reason)); }
-      finally { save.disabled = false; cancel.disabled = false; }
+      finally { this.saving = false; controls.forEach((control, index) => { control.disabled = disabled[index]; }); }
     };
   }
   onClose(): void { this.contentEl.empty(); this.options.onClose?.(); }

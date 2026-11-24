@@ -2,6 +2,8 @@ import type { App } from 'obsidian';
 import { stringify } from 'yaml';
 import { resolveAssociationPath, stringLinks, type InputKind } from '../model/inbox';
 import { validateMarkdownPath, writeFrontmatterWithExpectedHash, type WriteResult } from './vault-writes';
+export type AssociationTargets = Array<{ path: string }> | (() => Array<{ path: string }>);
+const currentTargets = (targets: AssociationTargets): Array<{ path: string }> => typeof targets === 'function' ? targets() : targets;
 export interface InboxAssociations { projects: string[]; problems: string[]; }
 export interface InboxCaptureInput extends InboxAssociations { title: string; kind: InputKind; content: string; sourceValue: string; }
 export function associationLinks(values: string[]): string[] {
@@ -24,18 +26,18 @@ export async function createInboxEntry(app: App, input: InboxCaptureInput, direc
   await app.vault.create(path, `---\n${stringify(fields).trim()}\n---\n# ${title}\n\n${input.content.trim()}\n`);
   return path;
 }
-export function updateInboxAssociations(app: App, path: string, expectedHash: string, links: InboxAssociations, completion?: { status: 'linked'; validTargets: Array<{ path: string }> }): Promise<WriteResult> {
+export function updateInboxAssociations(app: App, path: string, expectedHash: string, links: InboxAssociations, completion?: { status: 'linked'; validTargets: AssociationTargets }): Promise<WriteResult> {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
-    if (completion && ![...links.projects, ...links.problems].some((link) => !!resolveAssociationPath(link, completion.validTargets))) throw new Error('请先关联一个有效的项目或研究问题。');
+    if (completion && ![...links.projects, ...links.problems].some((link) => !!resolveAssociationPath(link, currentTargets(completion.validTargets)))) throw new Error('请先关联一个有效的项目或研究问题。');
     fm.projects = associationLinks(links.projects);
     fm.problems = associationLinks(links.problems);
     delete fm.project;
     if (completion) { fm.processing_status = 'linked'; fm.pending = false; }
   });
 }
-export function changeInboxState(app: App, path: string, expectedHash: string, status: 'pending' | 'linked' | 'deferred' | 'reference', validTargets: Array<{ path: string }>): Promise<WriteResult> {
+export function changeInboxState(app: App, path: string, expectedHash: string, status: 'pending' | 'linked' | 'deferred' | 'reference', validTargets: AssociationTargets): Promise<WriteResult> {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
-    if (status === 'linked' && ![...stringLinks(fm.project), ...stringLinks(fm.projects), ...stringLinks(fm.problems)].some((link) => !!resolveAssociationPath(link, validTargets))) throw new Error('请先关联一个有效的项目或研究问题。');
+    if (status === 'linked' && ![...stringLinks(fm.project), ...stringLinks(fm.projects), ...stringLinks(fm.problems)].some((link) => !!resolveAssociationPath(link, currentTargets(validTargets)))) throw new Error('请先关联一个有效的项目或研究问题。');
     fm.processing_status = status;
     fm.pending = status === 'pending';
   });

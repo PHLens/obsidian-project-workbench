@@ -22,7 +22,19 @@ export function updateTaskText(raw: string, patch: { status?: string; priority?:
 export function transitionPending(raw: string, status: 'pending' | 'linked' | 'deferred' | 'reference'): string { return applyFrontmatterPatch(raw, { pending: status === 'pending', processing_status: status }); }
 export function archiveMarkdown(raw: string): string { return applyFrontmatterPatch(raw, { archived: true }); }
 async function readTFile(app: App, path: string): Promise<TFile> { const file = app.vault.getFileByPath(path); if (!file) throw new Error(`找不到文件：${path}`); return file; }
-export async function writeFrontmatterWithExpectedHash(app: App, path: string, expectedHash: string, mutate: (frontmatter: Record<string, unknown>) => void): Promise<WriteResult> { validateMarkdownPath(path); const file = await readTFile(app, path); const raw = await app.vault.read(file); assertExpectedHash(raw, expectedHash); const parsed = splitFrontmatter(raw); mutate(parsed.frontmatter); const next = withFrontmatter(raw, parsed.frontmatter, parsed.body); await app.vault.modify(file, next); return { path, changed: next !== raw, oldHash: expectedHash, newHash: sha256(next) }; }
+export async function writeFrontmatterWithExpectedHash(app: App, path: string, expectedHash: string, mutate: (frontmatter: Record<string, unknown>) => void): Promise<WriteResult> {
+  validateMarkdownPath(path);
+  const file = await readTFile(app, path);
+  let before = '';
+  const next = await app.vault.process(file, (raw) => {
+    assertExpectedHash(raw, expectedHash);
+    before = raw;
+    const parsed = splitFrontmatter(raw);
+    mutate(parsed.frontmatter);
+    return withFrontmatter(raw, parsed.frontmatter, parsed.body);
+  });
+  return { path, changed: next !== before, oldHash: expectedHash, newHash: sha256(next) };
+}
 export async function createProjectBundle(app: App, input: ProjectBundleInput, directories: DataDirectories = {}): Promise<{ projectPath: string; problemPath: string }> { const text = createProjectBundleText(input, directories); validateMarkdownPath(text.projectPath); validateMarkdownPath(text.problemPath); if (app.vault.getAbstractFileByPath(text.projectPath) || app.vault.getAbstractFileByPath(text.problemPath)) throw new Error('项目或首个问题文件已存在，未创建任何文件。'); await app.vault.create(text.problemPath, text.problem); try { await app.vault.create(text.projectPath, text.project); } catch (error) { const created = app.vault.getAbstractFileByPath(text.problemPath); if (created && 'extension' in created) await app.fileManager.trashFile(created); throw new Error(`项目创建失败，已回滚首个问题文件：${String(error)}`); } return { projectPath: text.projectPath, problemPath: text.problemPath }; }
 export async function createProblemForProject(app: App, projectPath: string, input: { title: string; question: string; status: string; stage: string; researchRole: string; focus: boolean }, directories: DataDirectories = {}): Promise<string> {
   const safe = input.title.trim(); const problemPath = `${directories.problemDirectories?.[0] ?? 'Problems'}/${safe}.md`; validateMarkdownPath(problemPath); if (app.vault.getAbstractFileByPath(problemPath)) throw new Error('研究问题文件已存在，未创建任何文件。');

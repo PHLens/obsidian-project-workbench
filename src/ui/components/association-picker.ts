@@ -16,19 +16,24 @@ export function createAssociationPicker(container: HTMLElement, options: { label
       const chip = chips.createSpan({ cls: `rw-source-tag ${candidate ? '' : 'is-unresolved'}` });
       chip.createSpan({ text: `${candidate?.title ?? link}${candidate?.archived ? '（已归档）' : candidate ? '' : '（未解析）'}` });
       const remove = chip.createEl('button', { text: '×', attr: { 'aria-label': `移除关联 ${candidate?.title ?? link}` } });
-      remove.onclick = () => { selected = selected.filter((item) => item !== link); render(); };
+      remove.onclick = () => { const focused = root.ownerDocument.activeElement === remove; selected = selected.filter((item) => item !== link); render(); if (focused) (chips.querySelector<HTMLButtonElement>('button') ?? search).focus(); };
     }
     const query = search.value.trim().toLocaleLowerCase();
     const choices = options.candidates.filter((item) => (!item.archived || selected.some((link) => resolveAssociationPath(link, options.candidates) === item.path)) && `${item.title} ${item.path}`.toLocaleLowerCase().includes(query));
     for (const candidate of choices.slice(0, 40)) {
-      const row = list.createEl('label', { cls: 'rw-association-option' });
+      const row = list.createEl('label', { cls: 'rw-association-option' }); row.dataset.path = candidate.path;
       const checkbox = row.createEl('input', { type: 'checkbox' }); checkbox.checked = selected.some((link) => resolveAssociationPath(link, options.candidates) === candidate.path);
       checkbox.disabled = candidate.archived === true;
       const body = row.createSpan(); body.createEl('strong', { text: candidate.title }); body.createEl('small', { text: candidate.path });
       checkbox.onchange = () => {
+        const focused = root.ownerDocument.activeElement === checkbox;
         selected = selected.filter((link) => resolveAssociationPath(link, options.candidates) !== candidate.path);
         if (checkbox.checked) selected.push(`[[${candidate.path}]]`);
         render();
+        if (focused) {
+          const replacement = Array.from(list.querySelectorAll<HTMLElement>('.rw-association-option')).find((item) => item.dataset.path === candidate.path)?.querySelector<HTMLInputElement>('input');
+          (replacement ?? search).focus();
+        }
       };
     }
     if (!choices.length) list.createEl('small', { cls: 'rw-muted', text: '没有可选项；可保留现有关联。' });

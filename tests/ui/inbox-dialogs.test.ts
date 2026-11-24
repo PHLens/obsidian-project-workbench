@@ -3,6 +3,7 @@ import type { App } from 'obsidian';
 import { setupDom, flushUi } from '../helpers/dom';
 vi.mock('obsidian', async () => import('../helpers/obsidian-dom'));
 import { createAssociationPicker } from '../../src/ui/components/association-picker';
+import { InboxAssociationsModal } from '../../src/ui/modals/inbox-associations-modal';
 import { InboxCaptureModal } from '../../src/ui/modals/inbox-capture-modal';
 afterEach(() => vi.unstubAllGlobals());
 const candidates = { projects: [{ path: 'Projects/P.md', title: 'P' }], problems: [{ path: 'Problems/Q.md', title: 'Q' }], notes: [{ path: 'Library/Paper.md', title: 'Paper' }] };
@@ -37,4 +38,32 @@ describe('Inbox capture and association dialogs', () => {
     expect(document.querySelector('[role=alert]')?.textContent).toContain('Write failed');
     expect((document.querySelector('[name=title]') as HTMLInputElement).value).toBe('Keep me');
   });
+  it('restores keyboard focus after a selection and after chip removal', () => {
+    const { root } = setupDom(); createAssociationPicker(root, { label: '问题', candidates: candidates.problems, selected: ['[[Missing]]'] });
+    const checkbox = root.querySelector<HTMLInputElement>('input[type=checkbox]')!; checkbox.focus(); checkbox.click();
+    expect(document.activeElement).toBe(root.querySelector('input[type=checkbox]'));
+    const remove = root.querySelector<HTMLButtonElement>('.rw-association-chips button')!; remove.focus(); remove.click();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(root.contains(document.activeElement)).toBe(true);
+  });
+  it('retains capture data if dismissal is attempted during a failing save', async () => {
+    setupDom(); let fail: (reason: Error) => void = () => {};
+    const pending = new Promise<void>((_, reject) => { fail = reject; });
+    const modal = new InboxCaptureModal({} as App, { mode: 'new', candidates, submit: () => pending }); modal.open();
+    (document.querySelector('[name=title]') as HTMLInputElement).value = 'Keep me'; (document.querySelector('[data-action=save]') as HTMLElement).click(); modal.close();
+    expect(document.querySelector('.modal-content')).not.toBeNull();
+    expect(document.querySelector<HTMLInputElement>('.modal-content input')?.disabled).toBe(true);
+    fail(new Error('Save failed')); await flushUi();
+    expect((document.querySelector('[name=title]') as HTMLInputElement).value).toBe('Keep me'); expect(document.querySelector('[role=alert]')?.textContent).toContain('Save failed'); modal.close();
+  });
+  it('retains association selections if dismissal is attempted during a failing save', async () => {
+    setupDom(); let fail: (reason: Error) => void = () => {};
+    const pending = new Promise<void>((_, reject) => { fail = reject; });
+    const modal = new InboxAssociationsModal({} as App, { projects: [], problems: ['[[Missing]]'] }, candidates, () => pending); modal.open();
+    (document.querySelector('[data-action=save]') as HTMLElement).click(); modal.close();
+    expect(document.querySelector('.modal-content')).not.toBeNull();
+    expect(document.querySelector<HTMLInputElement>('.modal-content input')?.disabled).toBe(true);
+    fail(new Error('Save failed')); await flushUi(); expect(document.querySelector('.modal-content')?.textContent).toContain('Missing'); modal.close();
+  });
+
 });

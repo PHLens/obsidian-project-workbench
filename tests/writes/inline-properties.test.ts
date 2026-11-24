@@ -34,4 +34,12 @@ describe('inline property writes', () => {
     expect(getPropertySuggestions(files, 'problem', 'status')).toContain('investigating');
     expect(getPropertySuggestions(files, 'problem', 'status')).not.toContain('proposal-only');
   });
+  it('checks the expected hash inside the vault atomic process callback', async () => {
+    const original = '---\nstatus: active\n---\n# Original'; const external = original+'\nExternal change';
+    const test = memoryVault({ 'Problems/Q.md': original });
+    test.app.vault.process = async (_file, transform) => { test.contents.set('Problems/Q.md', external); return transform(external); };
+    await expect(saveInlineProperty(test.app, 'Problems/Q.md', sha256(original), 'status', 'completed')).rejects.toThrow('冲突');
+    expect(test.contents.get('Problems/Q.md')).toBe(external); expect(test.modify).not.toHaveBeenCalled();
+  });
+
 });

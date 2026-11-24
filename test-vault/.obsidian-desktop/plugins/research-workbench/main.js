@@ -7273,13 +7273,15 @@ async function readTFile(app, path) {
 async function writeFrontmatterWithExpectedHash(app, path, expectedHash, mutate) {
   validateMarkdownPath(path);
   const file = await readTFile(app, path);
-  const raw = await app.vault.read(file);
-  assertExpectedHash(raw, expectedHash);
-  const parsed = splitFrontmatter(raw);
-  mutate(parsed.frontmatter);
-  const next = withFrontmatter(raw, parsed.frontmatter, parsed.body);
-  await app.vault.modify(file, next);
-  return { path, changed: next !== raw, oldHash: expectedHash, newHash: sha256(next) };
+  let before = "";
+  const next = await app.vault.process(file, (raw) => {
+    assertExpectedHash(raw, expectedHash);
+    before = raw;
+    const parsed = splitFrontmatter(raw);
+    mutate(parsed.frontmatter);
+    return withFrontmatter(raw, parsed.frontmatter, parsed.body);
+  });
+  return { path, changed: next !== before, oldHash: expectedHash, newHash: sha256(next) };
 }
 async function createProjectBundle(app, input, directories = {}) {
   const text = createProjectBundleText(input, directories);
@@ -7501,14 +7503,17 @@ function createAssociationPicker(container, options) {
       chip.createSpan({ text: `${candidate?.title ?? link}${candidate?.archived ? "\uFF08\u5DF2\u5F52\u6863\uFF09" : candidate ? "" : "\uFF08\u672A\u89E3\u6790\uFF09"}` });
       const remove = chip.createEl("button", { text: "\xD7", attr: { "aria-label": `\u79FB\u9664\u5173\u8054 ${candidate?.title ?? link}` } });
       remove.onclick = () => {
+        const focused = root.ownerDocument.activeElement === remove;
         selected = selected.filter((item) => item !== link);
         render();
+        if (focused) (chips.querySelector("button") ?? search).focus();
       };
     }
     const query = search.value.trim().toLocaleLowerCase();
     const choices = options.candidates.filter((item) => (!item.archived || selected.some((link) => resolveAssociationPath(link, options.candidates) === item.path)) && `${item.title} ${item.path}`.toLocaleLowerCase().includes(query));
     for (const candidate of choices.slice(0, 40)) {
       const row = list.createEl("label", { cls: "rw-association-option" });
+      row.dataset.path = candidate.path;
       const checkbox = row.createEl("input", { type: "checkbox" });
       checkbox.checked = selected.some((link) => resolveAssociationPath(link, options.candidates) === candidate.path);
       checkbox.disabled = candidate.archived === true;
@@ -7516,9 +7521,14 @@ function createAssociationPicker(container, options) {
       body.createEl("strong", { text: candidate.title });
       body.createEl("small", { text: candidate.path });
       checkbox.onchange = () => {
+        const focused = root.ownerDocument.activeElement === checkbox;
         selected = selected.filter((link) => resolveAssociationPath(link, options.candidates) !== candidate.path);
         if (checkbox.checked) selected.push(`[[${candidate.path}]]`);
         render();
+        if (focused) {
+          const replacement = Array.from(list.querySelectorAll(".rw-association-option")).find((item) => item.dataset.path === candidate.path)?.querySelector("input");
+          (replacement ?? search).focus();
+        }
       };
     }
     if (!choices.length) list.createEl("small", { cls: "rw-muted", text: "\u6CA1\u6709\u53EF\u9009\u9879\uFF1B\u53EF\u4FDD\u7559\u73B0\u6709\u5173\u8054\u3002" });
@@ -7535,6 +7545,10 @@ var InboxCaptureModal = class extends import_obsidian8.Modal {
   constructor(app, options) {
     super(app);
     this.options = options;
+    __publicField(this, "saving", false);
+  }
+  close() {
+    if (!this.saving) super.close();
   }
   onOpen() {
     this.titleEl.setText(this.options.mode === "reference" ? "\u5F15\u7528\u5DF2\u6709\u7B14\u8BB0" : "\u65B0\u589E\u8D44\u6599");
@@ -7584,9 +7598,8 @@ var InboxCaptureModal = class extends import_obsidian8.Modal {
     cancel.onclick = () => this.close();
     const save = actions.createEl("button", { cls: "mod-cta", text: "\u52A0\u5165\u6536\u4EF6\u7BB1" });
     save.dataset.action = "save";
-    let saving = false;
     const submit = async () => {
-      if (saving) return;
+      if (this.saving) return;
       error.setText("");
       if (!title.value.trim()) {
         error.setText("\u8BF7\u8F93\u5165\u8D44\u6599\u6807\u9898\u3002");
@@ -7597,18 +7610,23 @@ var InboxCaptureModal = class extends import_obsidian8.Modal {
         error.setText("\u8BF7\u9009\u62E9\u8981\u5F15\u7528\u7684\u539F\u7B14\u8BB0\u3002");
         return;
       }
-      saving = true;
-      save.disabled = true;
-      cancel.disabled = true;
+      this.saving = true;
+      const controls = Array.from(form.querySelectorAll("input,textarea,select,button"));
+      const disabled = controls.map((control) => control.disabled);
+      controls.forEach((control) => {
+        control.disabled = true;
+      });
       try {
         await this.options.submit({ title: title.value.trim(), kind: kind.value, content: content.value.trim(), sourceValue: selectedNote ? `[[${selectedNote.path}]]` : source2?.value.trim() ?? "", projects: projects.getValue(), problems: problems.getValue() });
+        this.saving = false;
         this.close();
       } catch (reason) {
         error.setText(reason instanceof Error ? reason.message : String(reason));
       } finally {
-        saving = false;
-        save.disabled = false;
-        cancel.disabled = false;
+        this.saving = false;
+        controls.forEach((control, index) => {
+          control.disabled = disabled[index];
+        });
       }
     };
     save.onclick = () => void submit();
@@ -7634,6 +7652,10 @@ var InboxAssociationsModal = class extends import_obsidian9.Modal {
     this.candidates = candidates;
     this.submit = submit;
     this.options = options;
+    __publicField(this, "saving", false);
+  }
+  close() {
+    if (!this.saving) super.close();
   }
   onOpen() {
     this.titleEl.setText("\u5173\u8054\u9879\u76EE\u4E0E\u7814\u7A76\u95EE\u9898");
@@ -7649,17 +7671,24 @@ var InboxAssociationsModal = class extends import_obsidian9.Modal {
     save.dataset.action = "save";
     save.onclick = async () => {
       if (save.disabled) return;
-      save.disabled = true;
-      cancel.disabled = true;
+      this.saving = true;
       error.setText("");
+      const controls = Array.from(this.contentEl.querySelectorAll("input,button"));
+      const disabled = controls.map((control) => control.disabled);
+      controls.forEach((control) => {
+        control.disabled = true;
+      });
       try {
         await this.submit({ projects: projects.getValue(), problems: problems.getValue() });
+        this.saving = false;
         this.close();
       } catch (reason) {
         error.setText(reason instanceof Error ? reason.message : String(reason));
       } finally {
-        save.disabled = false;
-        cancel.disabled = false;
+        this.saving = false;
+        controls.forEach((control, index) => {
+          control.disabled = disabled[index];
+        });
       }
     };
   }
@@ -7670,6 +7699,7 @@ var InboxAssociationsModal = class extends import_obsidian9.Modal {
 };
 
 // src/ui/inbox-writes.ts
+var currentTargets = (targets) => typeof targets === "function" ? targets() : targets;
 function associationLinks(values) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean).map((value) => value.startsWith("[[") && value.endsWith("]]") ? value : `[[${value}]]`))];
 }
@@ -7698,7 +7728,7 @@ ${input.content.trim()}
 }
 function updateInboxAssociations(app, path, expectedHash, links, completion) {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
-    if (completion && ![...links.projects, ...links.problems].some((link) => !!resolveAssociationPath(link, completion.validTargets))) throw new Error("\u8BF7\u5148\u5173\u8054\u4E00\u4E2A\u6709\u6548\u7684\u9879\u76EE\u6216\u7814\u7A76\u95EE\u9898\u3002");
+    if (completion && ![...links.projects, ...links.problems].some((link) => !!resolveAssociationPath(link, currentTargets(completion.validTargets)))) throw new Error("\u8BF7\u5148\u5173\u8054\u4E00\u4E2A\u6709\u6548\u7684\u9879\u76EE\u6216\u7814\u7A76\u95EE\u9898\u3002");
     fm.projects = associationLinks(links.projects);
     fm.problems = associationLinks(links.problems);
     delete fm.project;
@@ -7710,7 +7740,7 @@ function updateInboxAssociations(app, path, expectedHash, links, completion) {
 }
 function changeInboxState(app, path, expectedHash, status, validTargets) {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
-    if (status === "linked" && ![...stringLinks(fm.project), ...stringLinks(fm.projects), ...stringLinks(fm.problems)].some((link) => !!resolveAssociationPath(link, validTargets))) throw new Error("\u8BF7\u5148\u5173\u8054\u4E00\u4E2A\u6709\u6548\u7684\u9879\u76EE\u6216\u7814\u7A76\u95EE\u9898\u3002");
+    if (status === "linked" && ![...stringLinks(fm.project), ...stringLinks(fm.projects), ...stringLinks(fm.problems)].some((link) => !!resolveAssociationPath(link, currentTargets(validTargets)))) throw new Error("\u8BF7\u5148\u5173\u8054\u4E00\u4E2A\u6709\u6548\u7684\u9879\u76EE\u6216\u7814\u7A76\u95EE\u9898\u3002");
     fm.processing_status = status;
     fm.pending = status === "pending";
   });
@@ -8224,6 +8254,10 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
       }
     });
   }
+  currentAssociationTargets() {
+    const candidates = this.candidates();
+    return [...candidates.projects, ...candidates.problems].filter((candidate) => !!this.app.vault.getFileByPath(candidate.path));
+  }
   async editInputAssociations(entry, markLinked = false) {
     const file = this.app.vault.getFileByPath(entry.path);
     if (!file) throw new Error("\u8D44\u6599\u7B14\u8BB0\u5DF2\u4E0D\u5B58\u5728\u3002");
@@ -8233,7 +8267,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     const expectedHash = sha256(raw);
     const candidates = this.candidates();
     new InboxAssociationsModal(this.app, current, candidates, async (links) => {
-      await updateInboxAssociations(this.app, entry.path, expectedHash, links, markLinked ? { status: "linked", validTargets: [...candidates.projects, ...candidates.problems] } : void 0);
+      await updateInboxAssociations(this.app, entry.path, expectedHash, links, markLinked ? { status: "linked", validTargets: () => this.currentAssociationTargets() } : void 0);
       await this.refreshAffected(entry.path);
     }, { markLinked, onClose: () => this.renderCurrent() }).open();
   }
@@ -8439,13 +8473,12 @@ projects: ["[[${this.snapshot?.project.title ?? "Project"}]]"]
     try {
       const raw = await this.app.vault.read(file);
       const entry = buildInboxIndex([{ path, content: raw }], { includeArchived: true })[0];
-      const candidates = this.candidates();
-      const targets = [...candidates.projects, ...candidates.problems];
+      const targets = this.currentAssociationTargets();
       if (status === "linked" && entry && ![...entry.projects, ...entry.problems].some((link) => resolveAssociationPath(link, targets))) {
         await this.editInputAssociations(entry, true);
         return;
       }
-      await changeInboxState(this.app, path, sha256(raw), status, targets);
+      await changeInboxState(this.app, path, sha256(raw), status, () => this.currentAssociationTargets());
       await this.refreshAffected(path);
     } catch (error) {
       new import_obsidian10.Notice(String(error));

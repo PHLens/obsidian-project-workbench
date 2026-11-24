@@ -173,13 +173,17 @@ export class ResearchWorkbenchView extends ItemView {
       choices: getPropertySuggestions((this.cachedFiles ?? []).filter((item) => isPathInDirectories(item.path, entity === 'project' ? this.dataScope.projectDirectories : this.dataScope.problemDirectories)), entity, field),
       onSave: async (value) => { await saveInlineProperty(this.app, path, expectedHash, field, value); await this.refreshAffected(path); } });
   }
+  private currentAssociationTargets(): Array<{ path: string }> {
+    const candidates = this.candidates();
+    return [...candidates.projects, ...candidates.problems].filter((candidate) => !!this.app.vault.getFileByPath(candidate.path));
+  }
   private async editInputAssociations(entry: InboxEntry, markLinked = false): Promise<void> {
     const file = this.app.vault.getFileByPath(entry.path); if (!file) throw new Error('资料笔记已不存在。');
     const raw = await this.app.vault.read(file); const current = buildInboxIndex([{ path: entry.path, content: raw }], { includeArchived: true })[0];
     if (!current) throw new Error('资料记录已改变，请重新加载。');
     const expectedHash = sha256(raw); const candidates = this.candidates();
     new InboxAssociationsModal(this.app, current, candidates, async (links) => {
-      await updateInboxAssociations(this.app, entry.path, expectedHash, links, markLinked ? { status: 'linked', validTargets: [...candidates.projects, ...candidates.problems] } : undefined);
+      await updateInboxAssociations(this.app, entry.path, expectedHash, links, markLinked ? { status: 'linked', validTargets: () => this.currentAssociationTargets() } : undefined);
       await this.refreshAffected(entry.path);
     }, { markLinked, onClose: () => this.renderCurrent() }).open();
   }
@@ -245,9 +249,9 @@ export class ResearchWorkbenchView extends ItemView {
     const file = this.app.vault.getFileByPath(path); if (!file) return;
     try {
       const raw = await this.app.vault.read(file); const entry = buildInboxIndex([{ path, content: raw }], { includeArchived: true })[0];
-      const candidates = this.candidates(); const targets = [...candidates.projects, ...candidates.problems];
+      const targets = this.currentAssociationTargets();
       if (status === 'linked' && entry && ![...entry.projects, ...entry.problems].some((link) => resolveAssociationPath(link, targets))) { await this.editInputAssociations(entry, true); return; }
-      await changeInboxState(this.app, path, sha256(raw), status, targets); await this.refreshAffected(path);
+      await changeInboxState(this.app, path, sha256(raw), status, () => this.currentAssociationTargets()); await this.refreshAffected(path);
     } catch (error) { new Notice(String(error)); this.renderCurrent(); }
   }
 }

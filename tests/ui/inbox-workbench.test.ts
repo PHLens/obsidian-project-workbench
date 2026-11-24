@@ -102,4 +102,34 @@ describe('complete Inbox workbench flows', () => {
     expect(test.read.mock.calls.some(([file]) => file.path === 'Library/Paper.md')).toBe(false); view.onunload();
   });
 
+  it('revalidates selected targets when the association dialog is saved', async () => {
+    const { browser } = setupDom(); const raw = '---\ntype: inbox\ntitle: Loose\nprocessing_status: pending\npending: true\n---\n# Loose';
+    const test = interactiveVault({ 'Projects/Demo.md': project, 'Inputs/Loose.md': raw });
+    const view = new ResearchWorkbenchView({ app: test.app } as unknown as WorkspaceLeaf, scope); await view.onOpen(); button('收件箱')!.click();
+    const state = document.querySelector<HTMLSelectElement>('[aria-label="处理状态 Loose"]')!; state.value = 'linked'; state.dispatchEvent(new browser.Event('change', { bubbles: true }) as unknown as Event); await flushUi();
+    document.querySelector<HTMLInputElement>('.modal-content input[type=checkbox]')!.click();
+    test.files.delete('Projects/Demo.md'); test.contents.delete('Projects/Demo.md'); await view.refresh();
+    (document.querySelector('.modal-content [data-action=save]') as HTMLElement).click(); await flushUi();
+    expect(fields(test.contents.get('Inputs/Loose.md')!)).toMatchObject({ processing_status: 'pending', pending: true });
+    expect(test.modify).not.toHaveBeenCalled(); expect(document.querySelector('.modal-content [role=alert]')?.textContent).toContain('有效'); view.onunload();
+  });
+  it('does not mark linked from stale cached targets before a deletion event is processed', async () => {
+    const { browser } = setupDom(); const raw = '---\ntype: inbox\ntitle: Reading\nprocessing_status: pending\nprojects: ["[[Projects/Demo.md]]"]\n---\n# Reading';
+    const test = interactiveVault({ 'Projects/Demo.md': project, 'Inputs/Reading.md': raw });
+    const view = new ResearchWorkbenchView({ app: test.app } as unknown as WorkspaceLeaf, scope); await view.onOpen(); button('收件箱')!.click();
+    test.files.delete('Projects/Demo.md'); test.contents.delete('Projects/Demo.md');
+    const state = document.querySelector<HTMLSelectElement>('[aria-label="处理状态 Reading"]')!; state.value = 'linked'; state.dispatchEvent(new browser.Event('change', { bubbles: true }) as unknown as Event); await flushUi();
+    expect(fields(test.contents.get('Inputs/Reading.md')!).processing_status).toBe('pending'); expect(test.modify).not.toHaveBeenCalled(); view.onunload();
+  });
+
+  it('checks target existence again inside the atomic state-change callback', async () => {
+    const { browser } = setupDom(); const raw = '---\ntype: inbox\ntitle: Reading\nprocessing_status: pending\nprojects: ["[[Projects/Demo.md]]"]\n---\n# Reading';
+    const test = interactiveVault({ 'Projects/Demo.md': project, 'Inputs/Reading.md': raw });
+    const process = test.app.vault.process.bind(test.app.vault);
+    test.app.vault.process = async (file, transform) => { test.files.delete('Projects/Demo.md'); test.contents.delete('Projects/Demo.md'); return process(file, transform); };
+    const view = new ResearchWorkbenchView({ app: test.app } as unknown as WorkspaceLeaf, scope); await view.onOpen(); button('收件箱')!.click();
+    const state = document.querySelector<HTMLSelectElement>('[aria-label="处理状态 Reading"]')!; state.value = 'linked'; state.dispatchEvent(new browser.Event('change', { bubbles: true }) as unknown as Event); await flushUi();
+    expect(fields(test.contents.get('Inputs/Reading.md')!).processing_status).toBe('pending'); expect(test.modify).not.toHaveBeenCalled(); view.onunload();
+  });
+
 });

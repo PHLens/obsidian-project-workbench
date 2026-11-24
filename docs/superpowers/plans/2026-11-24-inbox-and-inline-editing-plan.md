@@ -1,6 +1,6 @@
 # Inbox and Inline Editing Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Deliver global Inbox capture and real material associations, plus field-specific project/problem editing.
 
@@ -103,5 +103,5 @@
 
 - [x] Exercise the real components in a browser preview on wide and narrow layouts: uncategorized capture, reference capture, multi-problem linking, pending/processed navigation, and scalar/tag/goal editing. Inspect clipping, focus, and readable labels.
 - [x] Run `npm run check`, synchronize the two test-vault plugin bundles, run `node scripts/check-device-configs.mjs --vault test-vault`, and run `git diff --check`. Expect all checks to pass.
-- [ ] Commit documentation/fixture changes with an English message and perform the Native workflow's independent final review. Address important findings with failing regression tests before changes and rerun the suite.
-- [ ] Report actual verification results and remaining limitations. Keep the feature in the development worktree for review.
+- [x] Commit documentation/fixture changes with an English message and perform the Native workflow's independent final review. Address important findings with failing regression tests before changes and rerun the suite.
+- [x] Report actual verification results and remaining limitations. Keep the feature in the development worktree for review.

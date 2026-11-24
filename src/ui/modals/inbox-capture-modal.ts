@@ -7,6 +7,8 @@ export interface CaptureContext { projectPath?: string; problemPath?: string; }
 export interface CaptureCandidates { projects: AssociationCandidate[]; problems: AssociationCandidate[]; notes: AssociationCandidate[]; }
 export interface InboxCaptureOptions { mode: 'new' | 'reference'; kind?: InputKind; context?: CaptureContext; candidates: CaptureCandidates; submit: (input: InboxCaptureInput) => Promise<void>; }
 export class InboxCaptureModal extends Modal {
+  private saving = false;
+  close(): void { if (!this.saving) super.close(); }
   constructor(app: App, private readonly options: InboxCaptureOptions) { super(app); }
   onOpen(): void {
     this.titleEl.setText(this.options.mode === 'reference' ? '引用已有笔记' : '新增资料');
@@ -40,18 +42,20 @@ export class InboxCaptureModal extends Modal {
     const error = form.createDiv({ cls: 'rw-form-error' }); error.setAttribute('role', 'alert');
     const actions = form.createDiv({ cls: 'modal-button-container' }); const cancel = actions.createEl('button', { text: '取消' }); cancel.onclick = () => this.close();
     const save = actions.createEl('button', { cls: 'mod-cta', text: '加入收件箱' }); save.dataset.action = 'save';
-    let saving = false;
     const submit = async () => {
-      if (saving) return;
+      if (this.saving) return;
       error.setText('');
       if (!title.value.trim()) { error.setText('请输入资料标题。'); title.focus(); return; }
       if (this.options.mode === 'reference' && !selectedNote) { error.setText('请选择要引用的原笔记。'); return; }
-      saving = true; save.disabled = true; cancel.disabled = true;
+      this.saving = true;
+      const controls = Array.from(form.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | HTMLButtonElement>('input,textarea,select,button'));
+      const disabled = controls.map((control) => control.disabled);
+      controls.forEach((control) => { control.disabled = true; });
       try {
         await this.options.submit({ title: title.value.trim(), kind: kind.value as InputKind, content: content.value.trim(), sourceValue: selectedNote ? `[[${selectedNote.path}]]` : source?.value.trim() ?? '', projects: projects.getValue(), problems: problems.getValue() });
-        this.close();
+        this.saving = false; this.close();
       } catch (reason) { error.setText(reason instanceof Error ? reason.message : String(reason)); }
-      finally { saving = false; save.disabled = false; cancel.disabled = false; }
+      finally { this.saving = false; controls.forEach((control, index) => { control.disabled = disabled[index]; }); }
     };
     save.onclick = () => void submit();
     form.addEventListener('keydown', (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) { event.preventDefault(); void submit(); } });
