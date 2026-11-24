@@ -24,6 +24,7 @@ import { ScopedFileCache } from './scoped-file-cache';
 import { getUnassociatedProblemCandidates } from './problem-candidates';
 import { allDataDirectories, isPathInDirectories, resolveDataScope, type WorkbenchDataScope } from '../model/data-scope';
 import { attachColumnLayout, normalizeColumnPreferences, type ColumnLayoutController, type ColumnPreferences } from './column-layout';
+import { readNextSteps } from '../model/next-steps';
 
 interface ColumnStorage { preferences?: Partial<ColumnPreferences>; save?: (value: ColumnPreferences) => void | Promise<void>; }
 
@@ -152,10 +153,11 @@ export class ResearchWorkbenchView extends ItemView {
     if (!this.cachedFiles) return;
     this.inbox = buildInboxIndex(this.cachedFiles, { inputDirectories: this.dataScope.inputDirectories, includeArchived: false });
     this.cachedProjects = buildProjectIndex(this.cachedFiles, { includeArchived: this.state.includeArchived, projectDirectories: this.dataScope.projectDirectories });
-    if (!this.cachedProjects.length) { this.snapshot = null; this.cachedEvents = []; this.projectPath = ''; this.state.projectPath = ''; return; }
-    if (!this.cachedProjects.some((project) => project.path === this.projectPath)) this.projectPath = this.cachedProjects[0].path;
+    if (!this.cachedProjects.length) { this.snapshot = null; this.cachedEvents = []; this.projectPath = ''; this.state.projectPath = ''; this.state.expandedNextSteps = []; return; }
+    if (!this.cachedProjects.some((project) => project.path === this.projectPath)) { this.projectPath = this.cachedProjects[0].path; this.state.expandedNextSteps = []; }
     this.state.projectPath = this.projectPath;
     this.snapshot = buildProjectSnapshot(this.cachedFiles, this.projectPath, { includeArchived: this.state.includeArchived, ...this.dataScope });
+    this.state.expandedNextSteps = this.state.expandedNextSteps.filter(path => this.snapshot!.problems.some(problem => problem.path === path));
     this.cachedEvents = buildTimelineEvents(this.cachedFiles, this.snapshot, { recordDirectories: this.dataScope.recordDirectories });
   }
   private captureContext(context?: CaptureContext): CaptureContext {
@@ -175,7 +177,9 @@ export class ResearchWorkbenchView extends ItemView {
   }
   private actions(): WorkbenchActions {
     return {
-      selectProject: (path) => { this.projectPath = path; this.state.projectPath = path; this.rebuildCachedSnapshot(); this.renderCurrent(); },
+      selectProject: (path) => { if (path !== this.projectPath) this.state.expandedNextSteps = []; this.projectPath = path; this.state.projectPath = path; this.rebuildCachedSnapshot(); this.renderCurrent(); },
+      setNextStepsExpanded: (path, expanded) => { this.state.expandedNextSteps = expanded ? [...new Set([...this.state.expandedNextSteps, path])] : this.state.expandedNextSteps.filter(value => value !== path); },
+      openNextSteps: problem => { void this.openNextSteps(problem.path).catch(error => new Notice(String(error))); },
       selectPanel: (panel) => { if (panel === 'inbox') { void this.openGlobalInbox(); return; } this.state.panel = panel; this.renderCurrent(); },
       setProblemFilter: (filter) => { this.state.problemFilter = filter; this.renderCurrent(); },
       setQuery: (query) => { this.state.query = query; if (this.queryRenderTimer !== undefined) clearTimeout(this.queryRenderTimer); this.queryRenderTimer = setTimeout(() => { this.queryRenderTimer = undefined; this.renderCurrent(); }, 40); },
@@ -252,6 +256,15 @@ export class ResearchWorkbenchView extends ItemView {
     if (/^https?:\/\//i.test(value)) { window.open(value, '_blank', 'noopener,noreferrer'); return; }
     const path = resolveAssociationPath(value, this.app.vault.getMarkdownFiles());
     if (path) void this.openFile(path); else new Notice('无法找到关联的来源笔记。');
+  }
+  private async openNextSteps(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) throw new Error('问题原文已不存在。');
+    const raw = await this.app.vault.read(file);
+    const section = readNextSteps(parseNote({ path, content: raw }));
+    const leaf = this.app.workspace.getLeaf('tab');
+    if (section.line === undefined) await leaf.openFile(file);
+    else await leaf.openFile(file, { eState: { line: section.line } });
   }
   private async openFile(path: string): Promise<void> { const file = this.app.vault.getAbstractFileByPath(path); if (file instanceof TFile) await this.app.workspace.getLeaf('tab').openFile(file); }
   private async toggleFocus(problemPath: string, currentlyFocused: boolean): Promise<void> {

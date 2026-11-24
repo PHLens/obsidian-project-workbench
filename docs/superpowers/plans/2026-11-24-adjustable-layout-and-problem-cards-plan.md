@@ -99,12 +99,12 @@
 - renderProblemRow accepts the current expanded state and renders title/status, overview, property controls, up to three items, footer, and secondary actions.
 - Source navigation targets the heading in the current note, falling back to opening the note if it has changed.
 
-- [ ] Write tests/ui/problem-cards.test.ts for actual components: source states/order, three-item preview, expand/collapse without note opening, refresh/project/deletion state behavior, property actions, keyboard title/source access, and missing-list placeholders.
-- [ ] Add a real-view test for source navigation to the live heading and the no-heading fallback, with exactly one targeted note read.
-- [ ] Run the new tests and observe failures against the former table/summary behavior.
-- [ ] Implement cards, read-only markers, footer actions, state retention, and guarded source navigation. Update scoped CSS for the column controller, drawers, and cards; preserve theme/font choices.
-- [ ] Run the new tests, Focus/property/Inbox regressions, and type checking. Expect all passing.
-- [ ] Commit and ledger the result.
+- [x] Write tests/ui/problem-cards.test.ts for actual components: source states/order, three-item preview, expand/collapse without note opening, refresh/project/deletion state behavior, property actions, keyboard title/source access, and missing-list placeholders.
+- [x] Add a real-view test for source navigation to the live heading and the no-heading fallback, with exactly one targeted note read.
+- [x] Run the new tests and observe failures against the former table/summary behavior.
+- [x] Implement cards, read-only markers, footer actions, state retention, and guarded source navigation. Update scoped CSS for the column controller, drawers, and cards; preserve theme/font choices.
+- [x] Run the new tests, Focus/property/Inbox regressions, and type checking. Expect all passing.
+- [x] Commit and ledger the result.
 
 ### Task 5: Verification and local handoff
 

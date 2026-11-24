@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { buildProjectSnapshot, filterWorkbenchItems } from '../../src/model/project-snapshot';
 import { searchWorkbench } from '../../src/ui/search/workbench-search';
+import { parseNote } from '../../src/model/frontmatter';
+import { readNextSteps } from '../../src/model/next-steps';
 
 const project = { path: 'Projects/P.md', content: '---\ntype: project\nproblems: ["[[Problems/Q.md]]"]\n---\n# P' };
 function snapshot(body: string) {
   return buildProjectSnapshot([project, { path: 'Problems/Q.md', content: '---\ntype: problem\n---\n' + body }], project.path);
 }
 describe('Next Step source previews', () => {
+  it('reuses derived previews for unchanged cached notes and rebuilds them after a content change', () => {
+    const file = { path: 'Problems/Q.md', content: '# Q\n\n## Next Step\n\n- [ ] Original' };
+    const first = readNextSteps(parseNote(file));
+    expect(readNextSteps(parseNote(file))).toBe(first);
+    file.content = '# Q\n\n## Next Step\n\n- [ ] Updated';
+    const updated = readNextSteps(parseNote(file));
+    expect(updated).not.toBe(first); expect(updated.items.map(item => item.text)).toEqual(['Updated']);
+  });
   it('extracts every checklist entry with source order, completion, and absolute lines', () => {
     const s = snapshot('# Q\n\n## Overview\n\nA useful question.\n\n## Next Step\n\n- [ ] First action\n- [x] Second action\n- [ ] Third action\n\n## Records\n\n- [ ] Other work');
     const p = s.problems[0];

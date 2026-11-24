@@ -27,6 +27,8 @@ export interface WorkbenchActions {
   toggleFullText: (value: boolean) => void;
   openProjectNote: () => void;
   openProblem: (problem: ProblemSummary) => void;
+  openNextSteps: (problem: ProblemSummary) => void;
+  setNextStepsExpanded: (path: string, expanded: boolean) => void;
   createProject: () => void;
   createProblem: () => void;
   createTask: () => void;

@@ -8,6 +8,7 @@ export interface WorkbenchViewState {
   query: string;
   fullText: boolean;
   problemFilter: 'all' | 'focus';
+  expandedNextSteps: string[];
   status: string[];
   stage: string[];
   researchRole: string[];
@@ -20,7 +21,7 @@ export interface WorkbenchViewState {
 }
 
 export const DEFAULT_WORKBENCH_STATE: Omit<WorkbenchViewState, 'projectPath'> = {
-  panel: 'workspace', query: '', fullText: false, problemFilter: 'all', status: [], stage: [],
+  panel: 'workspace', query: '', fullText: false, problemFilter: 'all', expandedNextSteps: [], status: [], stage: [],
   researchRole: [], sources: [], includeArchived: false, density: 'comfortable',
   inboxView: 'pending', inboxKind: 'all', inboxAssociation: null,
 };

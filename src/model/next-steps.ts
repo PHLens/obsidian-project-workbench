@@ -1,6 +1,19 @@
 import type { Note, NextStepItem } from './types';
 
 interface SourceLine { text: string; line: number; heading?: { level: number; text: string }; }
+interface NextStepReading { items: NextStepItem[]; heading?: string; line?: number; }
+interface Preview { content: string; body?: string; summary: unknown; overview?: string; steps: NextStepReading; }
+const previews = new WeakMap<Note, Preview>();
+function previewFor(note: Note): Preview {
+  const cached = previews.get(note);
+  if (cached?.content === note.content && cached.body === note.body && cached.summary === note.frontmatter.summary) return cached;
+  const lines = sourceLines(note);
+  const preview = { content: note.content, body: note.body, summary: note.frontmatter.summary, overview: deriveOverview(note, lines), steps: parseSteps(lines) };
+  previews.set(note, preview); return preview;
+}
+export function readNextSteps(note: Note): NextStepReading { return previewFor(note).steps; }
+export function problemOverview(note: Note): string | undefined { return previewFor(note).overview; }
+
 function sourceLines(note: Note): SourceLine[] {
   const body = note.body ?? note.content;
   const offset = note.content.slice(0, note.content.length - body.length).split('\n').length - 1;
@@ -19,8 +32,7 @@ function sourceLines(note: Note): SourceLine[] {
   return lines;
 }
 
-export function readNextSteps(note: Note): { items: NextStepItem[]; heading?: string; line?: number } {
-  const lines = sourceLines(note);
+function parseSteps(lines: SourceLine[]): NextStepReading {
   const start = lines.findIndex(({ heading }) => heading?.level === 2 && /^(?:Next Steps?|下一步)$/i.test(heading.text));
   if (start < 0) return { items: [] };
   const items: NextStepItem[] = [];
@@ -38,9 +50,8 @@ export function readNextSteps(note: Note): { items: NextStepItem[]; heading?: st
   return { items, heading: lines[start].heading!.text, line: lines[start].line };
 }
 
-export function problemOverview(note: Note): string | undefined {
+function deriveOverview(note: Note, lines: SourceLine[]): string | undefined {
   if (typeof note.frontmatter.summary === 'string' && note.frontmatter.summary.trim()) return note.frontmatter.summary.trim();
-  const lines = sourceLines(note);
   const start = lines.findIndex(({ heading }) => heading?.level === 2 && /^(?:Overview|概述|问题概述)$/i.test(heading.text));
   const candidates = start >= 0 ? lines.slice(start + 1) : lines;
   const paragraph: string[] = [];
