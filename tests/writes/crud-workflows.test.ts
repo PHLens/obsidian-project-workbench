@@ -9,6 +9,11 @@ describe('protected CRUD workflows', () => {
     expect(result.problem).toContain('up: "[[New]]"');
     expect(result.problem).toContain('project: "[[New]]"');
   });
+  it('uses configured project and problem directories for new bundles', () => {
+    const result = createProjectBundleText({ name: 'New', goal: 'Goal', firstProblem: 'First question' }, { projectDirectories: ['Work/Projects'], problemDirectories: ['Work/Problems'] });
+    expect(result.projectPath).toBe('Work/Projects/New.md');
+    expect(result.problemPath).toBe('Work/Problems/First question.md');
+  });
   it('updates supported task fields and archives without deleting markdown', () => {
     const raw = '---\nstatus: open\npriority: normal\n---\n# Task\n';
     const updated = updateTaskText(raw, { status: 'done', priority: 'high', due: '2026-12-01' });

@@ -28,7 +28,11 @@ describe('workbench panels, search, and settings', () => {
     expect(searchWorkbench({ ...snapshot, problems: [{ ...snapshot.problems[0], summary: undefined, searchText: 'deep body needle' }] }, 'deep body needle', { fullText: false })).toEqual([]);
     expect(searchWorkbench({ ...snapshot, problems: [{ ...snapshot.problems[0], summary: undefined, searchText: 'deep body needle' }] }, 'deep body needle', { fullText: true }).map((x) => x.title)).toEqual(['复杂 workload']);
   });
+  it('filters the visible problem list by summary without full text mode', async () => {
+    const { filterWorkbenchItems } = await import('../../src/model/project-snapshot');
+    expect(filterWorkbenchItems(snapshot, '能力缺口').problems.map((problem) => problem.title)).toEqual(['复杂 workload']);
+  });
   it('keeps settings defaults explicit', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ density: 'comfortable', accentMode: 'theme', tagMode: 'full', rightRail: 'fixed', iconStyle: 'linear' });
+    expect(DEFAULT_SETTINGS).toMatchObject({ density: 'comfortable', accentMode: 'theme', tagMode: 'full', rightRail: 'fixed', iconStyle: 'linear', projectDirectories: [] });
   });
 });

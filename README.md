@@ -48,8 +48,16 @@ To try the plugin in Obsidian:
 1. Open `test-vault` as a Vault.
 2. Install or copy the same `main.js`, `manifest.json`, and `styles.css` into the plugin directory for the active device configuration.
 3. Enable **Project Workbench** in Community Plugins.
-4. Run **Open project workbench** from the command palette.
-5. Select a project, create or edit a problem, open the filter panel, and try the focus/association/archive actions.
+4. In **Project Workbench → Data scope**, configure `Projects`, `Problems`, `Tasks`, `Inputs`, and `Records` for the respective directory fields.
+5. Run **Open project workbench** from the command palette, select a project, and try the create/edit, focus, filter, and association actions.
+
+## Directory configuration
+
+Directory lists are empty on first use. Configure the project, problem, task, pending-input, and progress-record directories in the plugin settings. Paths are relative to the vault; multiple directories are separated by commas, and subdirectories are included. New notes are created in the first configured directory for their type. Empty lists disable that data category.
+
+The workbench reads Markdown only in the configured directories. Search and panel changes use the loaded snapshot; changes outside the configured directories do not schedule a reload.
+
+Settings are stored by Obsidian in `<config-dir>/plugins/research-workbench/data.json`, where `<config-dir>` is the vault's active configuration directory. The same location applies to separate desktop and mobile configuration directories. Keep this file local to the vault; distribute only `main.js`, `manifest.json`, and `styles.css` when updating the plugin. Updates preserve existing settings.
 
 ## Build output
 

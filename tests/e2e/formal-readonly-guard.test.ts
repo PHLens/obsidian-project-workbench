@@ -11,14 +11,14 @@ describe('formal vault readonly guard', () => {
     mkdirSync(join(root, '.obsidian-mobile/plugins/research-workbench'), { recursive: true });
     writeFileSync(join(root, '.obsidian-desktop/community-plugins.json'), '[]\n');
     writeFileSync(join(root, '.obsidian-mobile/community-plugins.json'), '[]\n');
-    mkdirSync(join(root, 'Spaces/Research/Projects'), { recursive: true });
-    writeFileSync(join(root, 'Spaces/Research/Projects/P.md'), '# P\n');
+    mkdirSync(join(root, 'Projects'), { recursive: true });
+    writeFileSync(join(root, 'Projects/P.md'), '# P\n');
     const baseline = join(root, 'baseline.json');
     execFileSync('node', ['scripts/verify-formal-vault-readonly.mjs', '--vault', root, '--write-baseline', baseline], { encoding: 'utf8' });
     writeFileSync(join(root, '.obsidian-desktop/plugins/research-workbench/main.js'), 'plugin');
     writeFileSync(join(root, '.obsidian-desktop/community-plugins.json'), '["research-workbench"]\n');
     expect(execFileSync('node', ['scripts/verify-formal-vault-readonly.mjs', '--vault', root, '--baseline', baseline], { encoding: 'utf8' })).toContain('readonly ok');
-    writeFileSync(join(root, 'Spaces/Research/Projects/P.md'), '# changed\n');
+    writeFileSync(join(root, 'Projects/P.md'), '# changed\n');
     expect(() => execFileSync('node', ['scripts/verify-formal-vault-readonly.mjs', '--vault', root, '--baseline', baseline], { encoding: 'utf8' })).toThrow();
   });
 });

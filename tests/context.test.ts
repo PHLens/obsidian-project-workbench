@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { exportProjectContext, applyUpdatePlan } from '../tools/cli/export-context';
-const vault = resolve('test-vault'); const project = 'Spaces/Research/Projects/Demo Project.md';
+const vault = resolve('test-vault'); const project = 'Projects/Demo Project.md';
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 describe('context', () => {
   it('exports deterministic project context', () => { const x = exportProjectContext(vault, project); expect(x.snapshot.project.title).toBe('Demo Project'); expect(x.sources.length).toBeGreaterThan(0); });
