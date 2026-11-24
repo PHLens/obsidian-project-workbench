@@ -27,6 +27,83 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 var import_obsidian12 = require("obsidian");
 
+// src/model/data-scope.ts
+var DEFAULT_DATA_SCOPE = {
+  projectDirectories: [],
+  problemDirectories: [],
+  taskDirectories: [],
+  inputDirectories: [],
+  recordDirectories: []
+};
+function normalizeDirectoryList(value) {
+  const values = Array.isArray(value) ? value : value.split(",");
+  return [...new Set(values.map((item) => item.trim().replace(/^\/+|\/+$/g, "")).filter(Boolean))];
+}
+function isPathInDirectories(path, directories) {
+  const normalizedPath = path.replace(/^\/+/, "");
+  return normalizeDirectoryList(directories).some((directory) => normalizedPath === directory || normalizedPath.startsWith(`${directory}/`));
+}
+function resolveDataScope(scope = {}) {
+  return {
+    projectDirectories: normalizeDirectoryList(scope.projectDirectories ?? DEFAULT_DATA_SCOPE.projectDirectories),
+    problemDirectories: normalizeDirectoryList(scope.problemDirectories ?? DEFAULT_DATA_SCOPE.problemDirectories),
+    taskDirectories: normalizeDirectoryList(scope.taskDirectories ?? DEFAULT_DATA_SCOPE.taskDirectories),
+    inputDirectories: normalizeDirectoryList(scope.inputDirectories ?? DEFAULT_DATA_SCOPE.inputDirectories),
+    recordDirectories: normalizeDirectoryList(scope.recordDirectories ?? DEFAULT_DATA_SCOPE.recordDirectories)
+  };
+}
+function allDataDirectories(scope = {}) {
+  const resolved = resolveDataScope(scope);
+  return normalizeDirectoryList([...resolved.projectDirectories, ...resolved.problemDirectories, ...resolved.taskDirectories, ...resolved.inputDirectories, ...resolved.recordDirectories]);
+}
+
+// src/model/types.ts
+function normalizeLink(value) {
+  if (typeof value !== "string") return null;
+  const match = value.match(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/);
+  return (match?.[1] ?? value).replace(/\.md$/, "").trim() || null;
+}
+function linkMatches(value, path, notes) {
+  const normalized = normalizeLink(value);
+  if (!normalized) return false;
+  const base = path.replace(/\.md$/, "");
+  if (normalized === base || normalized === path) return true;
+  const target = notes.find((note) => note.path.replace(/\.md$/, "") === normalized || note.path.split("/").pop()?.replace(/\.md$/, "") === normalized);
+  return target?.path === path;
+}
+function resolveProblemScope(project, notes, options = {}) {
+  const dataScope = options.problemDirectories ? resolveDataScope(options) : void 0;
+  const problems = notes.filter((note) => note.frontmatter.type === "problem" && (!dataScope || isPathInDirectories(note.path, dataScope.problemDirectories)));
+  const direct = /* @__PURE__ */ new Set();
+  const explicit = Array.isArray(project.frontmatter.problems) ? project.frontmatter.problems : project.frontmatter.problems ? [project.frontmatter.problems] : [];
+  for (const problem of problems) {
+    if (explicit.some((value) => linkMatches(value, problem.path, notes))) direct.add(problem.path);
+  }
+  if (!direct.size) {
+    const researchQuestion = project.body ?? project.content;
+    for (const problem of problems) {
+      if (researchQuestion.includes(`[[${problem.path.replace(/\.md$/, "")}]]`) || researchQuestion.includes(`[[${problem.path.split("/").pop()?.replace(/\.md$/, "")}]]`)) direct.add(problem.path);
+    }
+  }
+  const scope = new Set(direct);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const problem of problems) {
+      if (scope.has(problem.path)) continue;
+      const up = problem.frontmatter.up;
+      for (const parent of scope) {
+        if (linkMatches(up, parent, notes)) {
+          scope.add(problem.path);
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+  return scope;
+}
+
 // src/ui/workbench-view.ts
 var import_obsidian10 = require("obsidian");
 
@@ -6364,83 +6441,6 @@ async function primeParsedNotes(files, keepGoing = () => true, yieldControl = ()
   return keepGoing();
 }
 
-// src/model/data-scope.ts
-var DEFAULT_DATA_SCOPE = {
-  projectDirectories: [],
-  problemDirectories: [],
-  taskDirectories: [],
-  inputDirectories: [],
-  recordDirectories: []
-};
-function normalizeDirectoryList(value) {
-  const values = Array.isArray(value) ? value : value.split(",");
-  return [...new Set(values.map((item) => item.trim().replace(/^\/+|\/+$/g, "")).filter(Boolean))];
-}
-function isPathInDirectories(path, directories) {
-  const normalizedPath = path.replace(/^\/+/, "");
-  return normalizeDirectoryList(directories).some((directory) => normalizedPath === directory || normalizedPath.startsWith(`${directory}/`));
-}
-function resolveDataScope(scope = {}) {
-  return {
-    projectDirectories: normalizeDirectoryList(scope.projectDirectories ?? DEFAULT_DATA_SCOPE.projectDirectories),
-    problemDirectories: normalizeDirectoryList(scope.problemDirectories ?? DEFAULT_DATA_SCOPE.problemDirectories),
-    taskDirectories: normalizeDirectoryList(scope.taskDirectories ?? DEFAULT_DATA_SCOPE.taskDirectories),
-    inputDirectories: normalizeDirectoryList(scope.inputDirectories ?? DEFAULT_DATA_SCOPE.inputDirectories),
-    recordDirectories: normalizeDirectoryList(scope.recordDirectories ?? DEFAULT_DATA_SCOPE.recordDirectories)
-  };
-}
-function allDataDirectories(scope = {}) {
-  const resolved = resolveDataScope(scope);
-  return normalizeDirectoryList([...resolved.projectDirectories, ...resolved.problemDirectories, ...resolved.taskDirectories, ...resolved.inputDirectories, ...resolved.recordDirectories]);
-}
-
-// src/model/types.ts
-function normalizeLink(value) {
-  if (typeof value !== "string") return null;
-  const match = value.match(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/);
-  return (match?.[1] ?? value).replace(/\.md$/, "").trim() || null;
-}
-function linkMatches(value, path, notes) {
-  const normalized = normalizeLink(value);
-  if (!normalized) return false;
-  const base = path.replace(/\.md$/, "");
-  if (normalized === base || normalized === path) return true;
-  const target = notes.find((note) => note.path.replace(/\.md$/, "") === normalized || note.path.split("/").pop()?.replace(/\.md$/, "") === normalized);
-  return target?.path === path;
-}
-function resolveProblemScope(project, notes, options = {}) {
-  const dataScope = options.problemDirectories ? resolveDataScope(options) : void 0;
-  const problems = notes.filter((note) => note.frontmatter.type === "problem" && (!dataScope || isPathInDirectories(note.path, dataScope.problemDirectories)));
-  const direct = /* @__PURE__ */ new Set();
-  const explicit = Array.isArray(project.frontmatter.problems) ? project.frontmatter.problems : project.frontmatter.problems ? [project.frontmatter.problems] : [];
-  for (const problem of problems) {
-    if (explicit.some((value) => linkMatches(value, problem.path, notes))) direct.add(problem.path);
-  }
-  if (!direct.size) {
-    const researchQuestion = project.body ?? project.content;
-    for (const problem of problems) {
-      if (researchQuestion.includes(`[[${problem.path.replace(/\.md$/, "")}]]`) || researchQuestion.includes(`[[${problem.path.split("/").pop()?.replace(/\.md$/, "")}]]`)) direct.add(problem.path);
-    }
-  }
-  const scope = new Set(direct);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const problem of problems) {
-      if (scope.has(problem.path)) continue;
-      const up = problem.frontmatter.up;
-      for (const parent of scope) {
-        if (linkMatches(up, parent, notes)) {
-          scope.add(problem.path);
-          changed = true;
-          break;
-        }
-      }
-    }
-  }
-  return scope;
-}
-
 // src/model/inbox.ts
 var PROCESSED_STATES = ["processed"];
 function getInboxCounts(entries) {
@@ -6663,7 +6663,7 @@ function renderProjectSidebar(container, projects, state, actions, pendingCount 
     const button = projectGroup.createEl("button", { cls: `rw-project-choice ${project.path === state.projectPath ? "is-active" : ""}` });
     const projectIcon = button.createSpan({ cls: "rw-project-choice-icon" });
     renderIcon(projectIcon, "network");
-    button.createSpan({ cls: "rw-project-choice-name", text: project.title });
+    button.createSpan({ cls: "rw-project-choice-name", text: project.title, attr: { title: project.title } });
     button.createSpan({ cls: "rw-project-choice-arrow", text: "\u203A" });
     button.onclick = () => actions.selectProject(project.path);
     button.oncontextmenu = (event) => {
@@ -6763,7 +6763,7 @@ function renderProblemRow(container, problem, actions) {
   icon.setAttribute("aria-hidden", "true");
   const body = row.createDiv({ cls: "rw-problem-main" });
   const identity = body.createDiv({ cls: "rw-problem-identity" });
-  identity.createEl("strong", { text: problem.title });
+  identity.createEl("strong", { text: problem.title, attr: { title: problem.title } });
   renderPropertyButton(identity, { path: problem.path, field: "status", label: "\u95EE\u9898\u72B6\u6001", value: problem.status ?? "", className: "rw-status", onEdit: (anchor) => actions.editProperty(problem.path, "problem", "status", anchor) });
   body.createEl("p", { cls: "rw-problem-summary", text: problem.summary ?? problem.nextSteps[0] ?? "\u7406\u89E3\u5F85\u8865\u5145" });
   const meta = body.createDiv({ cls: "rw-problem-meta" });
@@ -6805,13 +6805,17 @@ function renderProblemRow(container, problem, actions) {
 }
 
 // src/ui/components/problem-table.ts
+function getProblemDisplayOrder(problems, filter) {
+  const focused = problems.filter((problem) => problem.focus);
+  return filter === "focus" ? focused : [...focused, ...problems.filter((problem) => !problem.focus)];
+}
 function renderProblemTable(container, snapshot, state, actions) {
   const table = container.createDiv({ cls: "rw-problem-table" });
   const head = table.createDiv({ cls: "rw-problem-table-head" });
   head.createSpan({ cls: "rw-table-icon-spacer", attr: { "aria-hidden": "true" } });
   head.createSpan({ text: "\u7814\u7A76\u95EE\u9898" });
   head.createSpan({ text: "\u6700\u8FD1\u6574\u7406" });
-  const problems = state.problemFilter === "focus" ? snapshot.problems.filter((problem) => problem.focus) : snapshot.problems;
+  const problems = getProblemDisplayOrder(snapshot.problems, state.problemFilter);
   if (!problems.length) {
     table.createDiv({ cls: "rw-table-empty", text: "\u5F53\u524D\u7B5B\u9009\u4E0B\u6CA1\u6709\u7814\u7A76\u95EE\u9898" });
     return table;
@@ -6839,16 +6843,17 @@ function renderFocusPanel(container, snapshot, actions) {
   foot.createSpan({ text: snapshot.project.currentGate ?? "\u5F53\u524D\u95E8\u69DB\u5F85\u8865\u5145" });
   foot.createSpan({ text: "\xB7" });
   foot.createSpan({ text: snapshot.project.nextMilestone ?? "\u4E0B\u4E00\u91CC\u7A0B\u7891\u5F85\u8865\u5145" });
-  const button = card.createEl("button", { cls: "rw-link-button", text: "\u7F16\u8F91\u9636\u6BB5\u76EE\u6807" });
+  const actionsRow = card.createDiv({ cls: "rw-card-actions", attr: { role: "group", "aria-label": "\u7126\u70B9\u64CD\u4F5C" } });
+  const button = actionsRow.createEl("button", { cls: "rw-link-button", text: "\u7F16\u8F91\u9636\u6BB5\u76EE\u6807" });
   button.onclick = actions.openGoals;
-  const task = card.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u6DFB\u52A0\u4E0B\u4E00\u4EFB\u52A1" });
+  const task = actionsRow.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u6DFB\u52A0\u4E0B\u4E00\u4EFB\u52A1" });
   task.onclick = actions.createTask;
   if (snapshot.tasks.length) {
     const tasks = card.createDiv({ cls: "rw-focus-tasks" });
     tasks.createEl("small", { text: "\u76F8\u5173\u4EFB\u52A1" });
     for (const item of snapshot.tasks.slice(0, 4)) {
       const row = tasks.createDiv({ cls: "rw-focus-task" });
-      const open = row.createEl("button", { text: item.title });
+      const open = row.createEl("button", { text: item.title, attr: { title: item.title } });
       open.onclick = () => actions.openTask(item.path);
       const edit = row.createEl("button", { text: "\u7F16\u8F91" });
       edit.onclick = () => actions.editTask(item.path);
@@ -6873,7 +6878,7 @@ function renderTimeline(container, events, actions) {
     const icon = item.createSpan({ cls: `rw-timeline-icon rw-timeline-${event.kind}` });
     renderIcon(icon, event.kind === "record" ? "notebook-pen" : "clock-3");
     const body = item.createDiv({ cls: TIMELINE_ITEM_CONTRACT.bodyClass });
-    body.createEl("strong", { cls: TIMELINE_ITEM_CONTRACT.titleClass, text: event.title });
+    body.createEl("strong", { cls: TIMELINE_ITEM_CONTRACT.titleClass, text: event.title, attr: { title: event.title } });
     body.createEl("small", { cls: TIMELINE_ITEM_CONTRACT.dateClass, text: event.date ?? event.label ?? "\u5F85\u786E\u8BA4\u65E5\u671F" });
   }
   return section;
@@ -6890,13 +6895,14 @@ function renderPendingInbox(container, inputs, actions) {
   card.createEl("small", { text: `${inputs.length} \u6761\u5F53\u524D\u9879\u76EE\u5F85\u5904\u7406\u8D44\u6599` });
   for (const input of inputs.slice(0, 3)) {
     const row = card.createDiv({ cls: "rw-inbox-item-wrap" });
-    row.createEl("button", { cls: "rw-inbox-item", text: input.title }).onclick = () => actions.openPending(input);
+    row.createEl("button", { cls: "rw-inbox-item", text: input.title, attr: { title: input.title } }).onclick = () => actions.openPending(input);
     const complete = row.createEl("button", { cls: "rw-inbox-mini-action", text: "\u6807\u4E3A\u5DF2\u5904\u7406" });
     complete.title = "\u4EF7\u503C\u5DF2\u786E\u8BA4\u5E76\u6574\u7406\uFF0C\u53EF\u4F5C\u4E3A source \u6EAF\u6E90";
     complete.onclick = () => actions.transitionPending(input, "processed");
   }
-  card.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u65B0\u589E\u8D44\u6599" }).onclick = () => actions.recordIdea();
-  card.createEl("button", { cls: "rw-link-button", text: "\u6253\u5F00\u6536\u4EF6\u7BB1" }).onclick = actions.openInbox;
+  const footer = card.createDiv({ cls: "rw-card-actions", attr: { role: "group", "aria-label": "\u6536\u4EF6\u7BB1\u64CD\u4F5C" } });
+  footer.createEl("button", { cls: "rw-link-button", text: "\uFF0B \u65B0\u589E\u8D44\u6599" }).onclick = () => actions.recordIdea();
+  footer.createEl("button", { cls: "rw-link-button", text: "\u6253\u5F00\u6536\u4EF6\u7BB1" }).onclick = actions.openInbox;
   return card;
 }
 
@@ -7193,6 +7199,7 @@ var ProjectWizard = class extends import_obsidian.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("\u65B0\u5EFA\u7814\u7A76\u9879\u76EE");
     const form = this.contentEl.createDiv();
     const name = createModalField(form, { key: "projectName", control: "input", required: true }).input;
@@ -7227,6 +7234,7 @@ var TaskModal = class extends import_obsidian2.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("\u65B0\u5EFA\u4EFB\u52A1");
     const input = createModalField(this.contentEl, { key: "taskTitle", control: "input", required: true }).input;
     const b = this.contentEl.createEl("button", { text: "\u521B\u5EFA\u4EFB\u52A1", cls: "mod-cta rw-modal-button" });
@@ -7255,6 +7263,7 @@ var ProblemModal = class extends import_obsidian3.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("New research problem");
     const title = createModalField(this.contentEl, { key: "problemTitle", control: "input", required: true }).input;
     const question = createModalField(this.contentEl, { key: "problemQuestion", control: "textarea", required: true }).input;
@@ -7459,6 +7468,7 @@ var EditProblemModal = class extends import_obsidian4.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("\u7F16\u8F91\u7814\u7A76\u95EE\u9898");
     const status = createModalField(this.contentEl, { key: "problemStatus", control: "input", value: this.initial.status, required: true }).input;
     const stage = createModalField(this.contentEl, { key: "problemStage", control: "input", value: this.initial.stage, required: true }).input;
@@ -7488,6 +7498,7 @@ var AssociateProblemModal = class extends import_obsidian5.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("\u5173\u8054\u5DF2\u6709\u7814\u7A76\u95EE\u9898");
     const select = createModalField(this.contentEl, { key: "associateProblem", control: "select", required: true }).input;
     for (const problem of this.problems) select.createEl("option", { value: problem.path, text: problem.title });
@@ -7520,6 +7531,7 @@ var EditGoalsModal = class extends import_obsidian6.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("\u7F16\u8F91\u9636\u6BB5\u76EE\u6807");
     const gate = createModalField(this.contentEl, { key: "currentGate", control: "textarea", value: this.initial.currentGate }).input;
     const milestone = createModalField(this.contentEl, { key: "nextMilestone", control: "textarea", value: this.initial.nextMilestone }).input;
@@ -7548,6 +7560,7 @@ var EditTaskModal = class extends import_obsidian7.Modal {
     this.submit = submit;
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
     this.titleEl.setText("\u7F16\u8F91\u4EFB\u52A1");
     const status = createModalField(this.contentEl, { key: "taskStatus", control: "input", value: this.initial.status, required: true }).input;
     const priority = createModalField(this.contentEl, { key: "taskPriority", control: "input", value: this.initial.priority }).input;
@@ -7640,6 +7653,8 @@ var InboxCaptureModal = class extends import_obsidian8.Modal {
     if (!this.saving) super.close();
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
+    this.contentEl.addClass("rw-capture-modal");
     this.titleEl.setText(this.options.mode === "reference" ? "\u5F15\u7528\u5DF2\u6709\u7B14\u8BB0" : "\u65B0\u589E\u8D44\u6599");
     const form = this.contentEl;
     const title = createModalField(form, { key: "captureTitle", control: "input", required: true }).input;
@@ -7747,6 +7762,8 @@ var InboxAssociationsModal = class extends import_obsidian9.Modal {
     if (!this.saving) super.close();
   }
   onOpen() {
+    this.contentEl.addClass("rw-modal-form");
+    this.contentEl.addClass("rw-associations-modal");
     this.titleEl.setText("\u5173\u8054\u9879\u76EE\u4E0E\u7814\u7A76\u95EE\u9898");
     this.contentEl.createEl("p", { cls: "rw-muted", text: "\u53EF\u4EE5\u9009\u62E9\u591A\u9879\uFF1B\u5173\u8054\u5173\u7CFB\u4E0E\u4EF7\u503C\u786E\u8BA4\u72B6\u6001\u72EC\u7ACB\u3002" });
     const projects = createAssociationPicker(this.contentEl, { label: "\u9879\u76EE", candidates: this.candidates.projects, selected: this.initial.projects });
@@ -8456,11 +8473,10 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     const raw = await this.app.vault.read(project);
     try {
       await writeFrontmatterWithExpectedHash(this.app, this.projectPath, sha256(raw), (frontmatter) => {
-        const current = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value) => typeof value === "string") : [];
-        const file = this.app.vault.getAbstractFileByPath(problemPath);
-        const title = file instanceof import_obsidian10.TFile ? file.basename : problemPath.split("/").pop()?.replace(/\.md$/, "") ?? problemPath;
-        const link = `[[${title}]]`;
-        frontmatter.focus_problems = currentlyFocused ? current.filter((value) => value !== link) : [.../* @__PURE__ */ new Set([...current, link])];
+        const current = stringLinks(frontmatter.focus_problems);
+        const notes = parseNotes(this.cachedFiles ?? []);
+        const matches = (value) => linkMatches(value, problemPath, notes);
+        frontmatter.focus_problems = currentlyFocused ? current.filter((value) => !matches(value)) : current.some(matches) ? current : [...current, `[[${problemPath}]]`];
       });
       await this.refresh();
     } catch (error) {

@@ -256,3 +256,7 @@
 :is(.research-workbench.rw-shell,.rw-modal-form,.rw-property-editor) :is(input:where(:not([type=checkbox]):not([type=radio])),textarea,select) { height:auto; }
 .research-workbench.rw-shell input.rw-search { height:calc(1.5em + 12px); }
 :is(.rw-modal-form,.rw-property-editor) .rw-modal-control { min-height:calc(1.5em + 18px); }
+.rw-association-picker, .rw-association-chips { min-width:0; max-width:100%; }
+.rw-association-chips .rw-source-tag { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.rw-association-chips .rw-source-tag > span { min-width:0; overflow-wrap:anywhere; }
+.rw-association-chips .rw-source-tag > button { flex:0 0 auto; align-self:center; }
