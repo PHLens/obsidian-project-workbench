@@ -35,7 +35,8 @@ function projectSummary(note: Note): ProjectSummary {
 
 export function buildProjectIndex(files: VaultFile[], options: { includeArchived?: boolean; projectDirectories?: string[] } = {}): ProjectSummary[] {
   const dataScope = options.projectDirectories ? resolveDataScope({ projectDirectories: options.projectDirectories }) : undefined;
-  return parseNotes(files).filter((note) => note.frontmatter.type === 'project' && (!dataScope || isPathInDirectories(note.path, dataScope.projectDirectories)) && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a,b)=>a.path.localeCompare(b.path));
+  const candidates = dataScope ? files.filter((file) => isPathInDirectories(file.path, dataScope.projectDirectories)) : files;
+  return parseNotes(candidates).filter((note) => note.frontmatter.type === 'project' && (options.includeArchived || !isArchived(note))).map(projectSummary).sort((a,b)=>a.path.localeCompare(b.path));
 }
 
 function problemSummary(note: Note, focus: Set<string>): ProblemSummary {
