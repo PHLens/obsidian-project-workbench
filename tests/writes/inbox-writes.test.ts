@@ -30,29 +30,21 @@ describe('protected Inbox writes', () => {
     expect(fields(test.contents.get('Inputs/I.md')!).project).toBeUndefined();
     expect(test.contents.get('Inputs/I.md')).toContain('# Body\n');
   });
-  it('requires a real association before marking linked', async () => {
-    const raw = '---\npending: true\nproblems: ["[[Missing]]"]\n---\n# Body';
-    const test = memoryVault({ 'Inputs/I.md': raw });
-    await expect(changeInboxState(test.app, 'Inputs/I.md', sha256(raw), 'linked', [{ path: 'Problems/Q.md' }])).rejects.toThrow();
-    expect(test.modify).not.toHaveBeenCalled();
-  });
   it('keeps processed entries while clearing the pending flag', async () => {
     const raw = '---\npending: true\nproblems: ["[[Problems/Q.md]]"]\n---\n# Body';
     const test = memoryVault({ 'Inputs/I.md': raw });
-    await changeInboxState(test.app, 'Inputs/I.md', sha256(raw), 'linked', [{ path: 'Problems/Q.md' }]);
-    expect(fields(test.contents.get('Inputs/I.md')!)).toMatchObject({ pending: false, processing_status: 'linked' });
+    await changeInboxState(test.app, 'Inputs/I.md', sha256(raw), 'processed');
+    expect(fields(test.contents.get('Inputs/I.md')!)).toMatchObject({ pending: false, processing_status: 'processed' });
   });
   it('rejects association writes from an outdated editor', async () => {
     const test = memoryVault({ 'Inputs/I.md': '# Changed externally' });
     await expect(updateInboxAssociations(test.app, 'Inputs/I.md', sha256('# Original'), { projects: [], problems: [] })).rejects.toThrow('冲突');
     expect(test.modify).not.toHaveBeenCalled();
   });
-  it('associates and marks linked atomically when completing processing', async () => {
-    const raw = '---\npending: true\nprocessing_status: pending\n---\n# Body';
+  it('preserves confirmed review status while changing associations', async () => {
+    const raw = '---\npending: false\nprocessing_status: processed\n---\n# Source';
     const test = memoryVault({ 'Inputs/I.md': raw });
-    await updateInboxAssociations(test.app, 'Inputs/I.md', sha256(raw), { projects: [], problems: ['Problems/Q.md'] }, { status: 'linked', validTargets: [{ path: 'Problems/Q.md' }] });
-    expect(fields(test.contents.get('Inputs/I.md')!)).toMatchObject({ pending: false, processing_status: 'linked', problems: ['[[Problems/Q.md]]'] });
-    expect(test.modify).toHaveBeenCalledTimes(1);
+    await updateInboxAssociations(test.app, 'Inputs/I.md', sha256(raw), { projects: [], problems: ['Problems/Q.md'] });
+    expect(fields(test.contents.get('Inputs/I.md')!)).toMatchObject({ pending: false, processing_status: 'processed', problems: ['[[Problems/Q.md]]'] });
   });
-
 });

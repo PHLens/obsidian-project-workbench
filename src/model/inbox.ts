@@ -4,9 +4,11 @@ import { normalizeLink } from './types';
 import type { PendingInputSummary, VaultFile } from './types';
 
 export type InputKind = 'paper' | 'idea' | 'note';
+export type InboxStatus = 'pending' | 'processed';
 export type InboxView = 'pending' | 'processed' | 'all';
 export interface InboxEntry extends PendingInputSummary {
   kind: InputKind;
+  status: InboxStatus;
   projects: string[];
   problems: string[];
   sourceValue?: string;
@@ -14,7 +16,12 @@ export interface InboxEntry extends PendingInputSummary {
 }
 export interface InboxAssociation { kind: 'project' | 'problem'; path: string; }
 export interface InboxFilters { view?: InboxView; kind?: InputKind | 'all'; query?: string; association?: InboxAssociation | null; problemPaths?: string[]; }
-export const PROCESSED_STATES = ['linked', 'deferred', 'reference'] as const;
+export const PROCESSED_STATES = ['processed'] as const;
+export function getInboxCounts(entries: Array<Pick<PendingInputSummary, 'status' | 'archived'>>): { pending: number; processed: number; total: number } {
+  const active = entries.filter((entry) => !entry.archived);
+  const processed = active.filter((entry) => entry.status === 'processed').length;
+  return { pending: active.length - processed, processed, total: active.length };
+}
 export function stringLinks(value: unknown): string[] {
   return typeof value === 'string' ? [value] : Array.isArray(value) ? value.filter((link): link is string => typeof link === 'string') : [];
 }
@@ -34,7 +41,7 @@ export function buildInboxIndex(files: VaultFile[], options: { inputDirectories?
     const enrolled = fm.type === 'inbox' || typeof fm.processing_status === 'string' || fm.pending === true || fm.pending === 'true' || fm.review_status === 'pending' || tags.some((tag) => tag.replace(/^#/, '') === 'pending-discussion');
     const archived = fm.archived === true || fm.archived === 'true' || fm.status === 'archived';
     if (!enrolled || (archived && !options.includeArchived)) return [];
-    const status = typeof fm.processing_status === 'string' && fm.processing_status.trim() ? fm.processing_status : 'pending';
+    const status: InboxStatus = fm.processing_status === 'processed' ? 'processed' : 'pending';
     const projects = [...new Set([...stringLinks(fm.project), ...stringLinks(fm.projects)])];
     const bodySummary = (note.body ?? '').split('\n').map((line) => line.trim()).find((line) => line && !line.startsWith('#'));
     return [{ path: file.path, title: titleFor(note), kind: (['paper', 'idea', 'note'].includes(String(fm.input_kind)) ? fm.input_kind : fm.type === 'idea' ? 'idea' : 'note') as InputKind, status,

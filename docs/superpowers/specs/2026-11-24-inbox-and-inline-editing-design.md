@@ -38,17 +38,25 @@ The shared shell must render navigation and the Inbox independently of the exist
 
 ## Inbox Views and Item Actions
 
-The default Inbox view lists pending entries across configured input directories. Additional views expose processed entries and all entries. Existing processing states remain `pending`, `linked`, `deferred`, and `reference`. Search and kind/association filters operate on cached entries.
+The default Inbox view lists pending entries across configured input directories. Additional views expose processed entries and all entries. Review states are `pending` and `processed`. Pending material appears provisionally valuable but its value is not yet fully confirmed. Processed material has confirmed value and has been organized as a traceable source. Reading progress and project/problem associations are independent of this review state. Search and kind/association filters operate on cached entries.
 
 Each entry shows its title, kind, short summary when available, processing state, source, and project/problem association chips. Its actions are open entry, open source, edit associations, and change processing state.
 
 Association editing uses searchable project/problem pickers with multiple selections and visible removable chips. Existing associations are preselected. Candidate lists contain only projects and problems from their configured directories. Show paths to distinguish duplicate titles. Archived or unresolved existing links remain visible and can be removed explicitly; they are not silently discarded.
 
-Association editing preserves the current processing state. **Mark linked** requires at least one valid project or problem association and opens association selection if none exists. A processing-state change can remove an item from the pending view, but the item remains accessible in processed/all views.
+Association editing preserves review state. Marking an entry processed is an explicit confirmation of value and organization, with no association prerequisite. A processed entry remains accessible in processed/all views with its source link and body preserved. Reopening a value review returns it to pending.
 
 Project views show entries directly associated with that project or any problem in its existing problem scope. Problem views show entries directly associated with that problem. Use the existing project/problem membership model; adding an input association does not change the project's problem membership.
 
 **View material** on a problem opens the Inbox with that problem selected as an association filter; it does not replace the existing open-problem-note action. A visible filter chip can be cleared to return to the global list. The project right rail keeps showing that project's pending entries and links to the same filtered Inbox. The shared Inbox navigation item always opens the global list.
+
+## Pending Review Indicators
+
+The shared header has an Inbox icon with a pending-count badge. The sidebar Inbox entry carries the same global count. Count only non-archived pending entries in configured input directories; search, kind, project, and problem filters do not reduce these global indicators. Zero counts hide the badge, and visual counts above 99 use `99+` with the exact count in the accessible label/description.
+
+Clicking the notification or sidebar Inbox opens the global pending list and clears query, kind, and association filters. Viewing the Inbox does not acknowledge or clear pending reviews. Capture, explicit state changes, deletion, and archive changes update counts from the cached model.
+
+The Inbox's pending/processed/all tabs show counts for the current list scope, and the project rail identifies that project's pending material count. These scoped totals can differ from the global reminder while filters are active.
 
 ## Markdown Representation and Compatibility
 
@@ -73,7 +81,7 @@ Reading supports existing `type: idea` entries and existing enrollment markers (
 
 When an association edit is saved, normalize that entry's project associations into `projects` and remove its legacy `project` field so that removing an association cannot leave a stale singular link. Other fields and body content are preserved. Other entries are not migrated.
 
-Explicit `processing_status` takes precedence over older pending markers when deriving the processing view. Unknown legacy processing values remain visible in the all-items view and are preserved until edited. Merely opening the workbench writes nothing.
+Only explicit `processing_status: processed` establishes a confirmed source. Legacy `linked`, `reference`, `deferred`, and unknown values are displayed as pending because those labels do not establish confirmed value. Stored notes are preserved until an explicit edit. Merely opening the workbench writes nothing.
 
 ## Inline Property Editing
 

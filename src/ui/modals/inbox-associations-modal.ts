@@ -4,15 +4,15 @@ import { createAssociationPicker, type AssociationCandidate } from '../component
 export class InboxAssociationsModal extends Modal {
   private saving = false;
   close(): void { if (!this.saving) super.close(); }
-  constructor(app: App, private readonly initial: InboxAssociations, private readonly candidates: { projects: AssociationCandidate[]; problems: AssociationCandidate[] }, private readonly submit: (links: InboxAssociations) => Promise<void>, private readonly options: { markLinked?: boolean; onClose?: () => void } = {}) { super(app); }
+  constructor(app: App, private readonly initial: InboxAssociations, private readonly candidates: { projects: AssociationCandidate[]; problems: AssociationCandidate[] }, private readonly submit: (links: InboxAssociations) => Promise<void>, private readonly options: { onClose?: () => void } = {}) { super(app); }
   onOpen(): void {
     this.titleEl.setText('关联项目与研究问题');
-    this.contentEl.createEl('p', { cls: 'rw-muted', text: this.options.markLinked ? '选择关联后，将资料标为已关联。' : '可以选择多项。保存关联会保留资料当前的处理状态。' });
+    this.contentEl.createEl('p', { cls: 'rw-muted', text: '可以选择多项；关联关系与价值确认状态独立。' });
     const projects = createAssociationPicker(this.contentEl, { label: '项目', candidates: this.candidates.projects, selected: this.initial.projects });
     const problems = createAssociationPicker(this.contentEl, { label: '研究问题', candidates: this.candidates.problems, selected: this.initial.problems });
     const error = this.contentEl.createDiv({ cls: 'rw-form-error' }); error.setAttribute('role', 'alert');
     const actions = this.contentEl.createDiv({ cls: 'modal-button-container' }); const cancel = actions.createEl('button', { text: '取消' }); cancel.onclick = () => this.close();
-    const save = actions.createEl('button', { cls: 'mod-cta', text: this.options.markLinked ? '保存关联并完成处理' : '保存关联' }); save.dataset.action = 'save';
+    const save = actions.createEl('button', { cls: 'mod-cta', text: '保存关联' }); save.dataset.action = 'save';
     save.onclick = async () => {
       if (save.disabled) return; this.saving = true; error.setText('');
       const controls = Array.from(this.contentEl.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input,button'));

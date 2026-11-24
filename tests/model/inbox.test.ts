@@ -22,8 +22,8 @@ describe('global Inbox', () => {
     const old = entries.find((entry) => entry.title === 'Old')!;
     expect(old.projects).toEqual(['[[Projects/P.md]]', '[[Projects/Other.md]]']);
     expect(old.problems).toEqual(['[[Problems/Q.md]]']);
-    expect(filterInbox(entries, { view: 'pending' }, [])).toEqual([]);
-    expect(filterInbox(entries, { view: 'processed' }, []).map((entry) => entry.status)).toEqual(['deferred', 'linked']);
+    expect(filterInbox(entries, { view: 'pending' }, [])).toHaveLength(3);
+    expect(filterInbox(entries, { view: 'processed' }, [])).toEqual([]);
     expect(filterInbox(entries, { view: 'all' }, [])).toHaveLength(3);
   });
   it('uses full paths and rejects ambiguous basenames', () => {

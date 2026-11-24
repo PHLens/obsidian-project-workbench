@@ -25,7 +25,7 @@ Project Workbench reads existing Markdown files. It does not create a database o
 - Projects: `type: project`, `status`, `problems`, `focus_problems`, `current_gate`, `next_milestone`.
 - Problems: `type: problem`, `status`, `stage`, `research_role`, `up`, and the `## Next Step` section.
 - Tasks: TaskNotes-compatible `status`, `priority`, `due`, `projects`, and `tags` fields.
-- Pending inputs: `pending: true` and `processing_status` (`pending`, `linked`, `deferred`, or `reference`).
+- Pending inputs: `pending: true` and `processing_status` (`pending` or `processed`).
 
 Existing values are preserved when read. The plugin does not batch-migrate or rename existing notes.
 
@@ -64,6 +64,10 @@ Settings are stored by Obsidian in `<config-dir>/plugins/research-workbench/data
 The Inbox is available before the first project exists. Use **Add material** in the shared header or **New entry** in the Inbox to capture a paper, idea, or note with a title. Project and problem associations are optional during capture and can be added later. Capture from a project or problem starts with that context selected.
 
 Use **Reference existing note** to select a Markdown note from the vault. This creates a reference entry in the configured input directory while preserving the source note. Source directories do not become part of background loading.
+
+Pending means provisionally valuable material whose value is not fully confirmed. Processed means its value has been confirmed and the source has been organized for traceability. Neither association nor reading progress completes this review. Existing association-oriented labels are displayed as pending until explicit confirmation; stored notes are not bulk-migrated.
+
+The header Inbox icon and sidebar badge show the global pending backlog. Clicking them opens pending reviews with stale filters cleared. Simply opening Inbox does not clear the badge. Panel tabs and the project rail show scoped counts.
 
 Each Inbox entry supports multiple project/problem associations. Association changes preserve its processing state. Pending, processed, and all-item views keep entries accessible after processing. Problem **View material** and the project rail open a filtered Inbox; shared Inbox navigation returns to the global list.
 

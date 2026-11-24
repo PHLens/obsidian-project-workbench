@@ -19,7 +19,7 @@ function splitFrontmatter(raw: string): { frontmatter: Record<string, unknown>; 
 function withFrontmatter(raw: string, frontmatter: Record<string, unknown>, body: string): string { return `---\n${stringify(frontmatter).trim()}\n---\n${body.startsWith('\n') ? body : `\n${body}`}`; }
 export function applyFrontmatterPatch(raw: string, patch: Record<string, unknown>): string { const parsed = splitFrontmatter(raw); return withFrontmatter(raw, { ...parsed.frontmatter, ...patch }, parsed.body); }
 export function updateTaskText(raw: string, patch: { status?: string; priority?: string; due?: string }): string { return applyFrontmatterPatch(raw, patch); }
-export function transitionPending(raw: string, status: 'pending' | 'linked' | 'deferred' | 'reference'): string { return applyFrontmatterPatch(raw, { pending: status === 'pending', processing_status: status }); }
+export function transitionPending(raw: string, status: 'pending' | 'processed'): string { return applyFrontmatterPatch(raw, { pending: status === 'pending', processing_status: status }); }
 export function archiveMarkdown(raw: string): string { return applyFrontmatterPatch(raw, { archived: true }); }
 async function readTFile(app: App, path: string): Promise<TFile> { const file = app.vault.getFileByPath(path); if (!file) throw new Error(`找不到文件：${path}`); return file; }
 export async function writeFrontmatterWithExpectedHash(app: App, path: string, expectedHash: string, mutate: (frontmatter: Record<string, unknown>) => void): Promise<WriteResult> {

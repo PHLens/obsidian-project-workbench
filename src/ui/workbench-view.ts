@@ -1,7 +1,7 @@
 import { ItemView, Notice, TFile, WorkspaceLeaf, Menu, ConfirmationModal } from 'obsidian';
 import { buildProjectIndex, buildProjectSnapshot, buildTimelineEvents } from '../model/project-snapshot';
 import { parseNote, parseNotes, titleFor } from '../model/frontmatter';
-import { buildInboxIndex, resolveAssociationPath, stringLinks, type InboxEntry } from '../model/inbox';
+import { buildInboxIndex, resolveAssociationPath, stringLinks, type InboxEntry, type InboxStatus } from '../model/inbox';
 import type { ProjectSnapshot, ProjectSummary, TimelineEvent, VaultFile } from '../model/types';
 import { DEFAULT_WORKBENCH_STATE, type WorkbenchViewState } from '../model/view-state';
 import { renderWorkbench, type WorkbenchActions } from './components/workbench-shell';
@@ -99,7 +99,7 @@ export class ResearchWorkbenchView extends ItemView {
   private async refreshAffected(...paths: string[]): Promise<void> { paths.forEach((path) => this.dirtyPaths.add(path)); await this.refresh(); }
   private rebuildCachedSnapshot(): void {
     if (!this.cachedFiles) return;
-    this.inbox = buildInboxIndex(this.cachedFiles, { inputDirectories: this.dataScope.inputDirectories, includeArchived: this.state.includeArchived });
+    this.inbox = buildInboxIndex(this.cachedFiles, { inputDirectories: this.dataScope.inputDirectories, includeArchived: false });
     this.cachedProjects = buildProjectIndex(this.cachedFiles, { includeArchived: this.state.includeArchived, projectDirectories: this.dataScope.projectDirectories });
     if (!this.cachedProjects.length) { this.snapshot = null; this.cachedEvents = []; this.projectPath = ''; this.state.projectPath = ''; return; }
     if (!this.cachedProjects.some((project) => project.path === this.projectPath)) this.projectPath = this.cachedProjects[0].path;
@@ -125,7 +125,7 @@ export class ResearchWorkbenchView extends ItemView {
   private actions(): WorkbenchActions {
     return {
       selectProject: (path) => { this.projectPath = path; this.state.projectPath = path; this.rebuildCachedSnapshot(); this.renderCurrent(); },
-      selectPanel: (panel) => { this.state.panel = panel; if (panel === 'inbox') this.state.inboxAssociation = null; this.renderCurrent(); },
+      selectPanel: (panel) => { if (panel === 'inbox') { void this.openGlobalInbox(); return; } this.state.panel = panel; this.renderCurrent(); },
       setProblemFilter: (filter) => { this.state.problemFilter = filter; this.renderCurrent(); },
       setQuery: (query) => { this.state.query = query; if (this.queryRenderTimer !== undefined) clearTimeout(this.queryRenderTimer); this.queryRenderTimer = setTimeout(() => { this.queryRenderTimer = undefined; this.renderCurrent(); }, 40); },
       setFilters: (filters) => {
@@ -141,6 +141,7 @@ export class ResearchWorkbenchView extends ItemView {
       projectContextMenu: (path, event) => this.showProjectContextMenu(path, event), openTask: (path) => void this.openFile(path), editTask: (path) => void this.editTask(path), associateProblem: () => void this.associateProblem(),
       recordIdea: (context) => void this.openCapture('new', this.captureContext(context)), addExistingNote: (context) => void this.openCapture('reference', this.captureContext(context)),
       openGoals: () => { this.state.panel = 'goals'; this.renderCurrent(); }, editGoals: () => void this.editGoals(), openRecords: () => { this.state.panel = 'records'; this.renderCurrent(); },
+      openPendingInbox: () => void this.openGlobalInbox(),
       openInbox: () => this.viewMaterial('project', this.projectPath), archive: (path) => void this.archive(path), edit: (path) => void this.editProblem(path),
       editProperty: (path, entity, field, anchor) => void this.editInlineProperty(path, entity, field, anchor).catch((error) => new Notice(String(error))),
       toggleFocus: (problem) => void this.toggleFocus(problem.path, problem.focus), openEvent: (event) => void this.openFile(event.path), openPending: (input) => void this.openFile(input.path),
@@ -173,19 +174,15 @@ export class ResearchWorkbenchView extends ItemView {
       choices: getPropertySuggestions((this.cachedFiles ?? []).filter((item) => isPathInDirectories(item.path, entity === 'project' ? this.dataScope.projectDirectories : this.dataScope.problemDirectories)), entity, field),
       onSave: async (value) => { await saveInlineProperty(this.app, path, expectedHash, field, value); await this.refreshAffected(path); } });
   }
-  private currentAssociationTargets(): Array<{ path: string }> {
-    const candidates = this.candidates();
-    return [...candidates.projects, ...candidates.problems].filter((candidate) => !!this.app.vault.getFileByPath(candidate.path));
-  }
-  private async editInputAssociations(entry: InboxEntry, markLinked = false): Promise<void> {
+  private async editInputAssociations(entry: InboxEntry): Promise<void> {
     const file = this.app.vault.getFileByPath(entry.path); if (!file) throw new Error('资料笔记已不存在。');
     const raw = await this.app.vault.read(file); const current = buildInboxIndex([{ path: entry.path, content: raw }], { includeArchived: true })[0];
     if (!current) throw new Error('资料记录已改变，请重新加载。');
     const expectedHash = sha256(raw); const candidates = this.candidates();
     new InboxAssociationsModal(this.app, current, candidates, async (links) => {
-      await updateInboxAssociations(this.app, entry.path, expectedHash, links, markLinked ? { status: 'linked', validTargets: () => this.currentAssociationTargets() } : undefined);
+      await updateInboxAssociations(this.app, entry.path, expectedHash, links);
       await this.refreshAffected(entry.path);
-    }, { markLinked, onClose: () => this.renderCurrent() }).open();
+    }, { onClose: () => this.renderCurrent() }).open();
   }
   private openSource(entry: InboxEntry): void {
     const value = entry.sourceValue?.trim(); if (!value) return;
@@ -242,16 +239,14 @@ export class ResearchWorkbenchView extends ItemView {
   }
   async createProblem(): Promise<void> { try { this.requireDirectory('problemDirectories'); } catch (error) { new Notice(String(error)); return; } new ProblemModal(this.app, async (result) => { if (!this.snapshot) return; const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: 'inbox', stage: 'inbox', researchRole: 'mainline', focus: false }, this.dataScope); await this.refresh(); await this.openFile(path); }).open(); }
   async createTask(): Promise<void> { let directory: string; try { directory = this.requireDirectory('taskDirectories'); } catch (error) { new Notice(String(error)); return; } new TaskModal(this.app, async (title) => { const path = `${directory}/${title.trim()}.md`; await this.app.vault.create(path, `---\nstatus: open\ntags: [task]\nprojects: ["[[${this.snapshot?.project.title ?? 'Project'}]]"]\n---\n# ${title.trim()}\n`); await this.refresh(); }).open(); }
-  async openGlobalInbox(): Promise<void> { this.state.panel = 'inbox'; this.state.inboxAssociation = null; this.renderCurrent(); }
+  async openGlobalInbox(): Promise<void> { this.state.panel = 'inbox'; this.state.inboxAssociation = null; this.state.inboxView = 'pending'; this.state.inboxKind = 'all'; this.state.query = ''; this.renderCurrent(); }
   async captureExistingNote(): Promise<void> { await this.openCapture('reference', {}); }
   async createPending(): Promise<void> { await this.openCapture('new', {}); }
-  private async transitionPending(path: string, status: 'pending' | 'linked' | 'deferred' | 'reference'): Promise<void> {
+  private async transitionPending(path: string, status: InboxStatus): Promise<void> {
     const file = this.app.vault.getFileByPath(path); if (!file) return;
     try {
-      const raw = await this.app.vault.read(file); const entry = buildInboxIndex([{ path, content: raw }], { includeArchived: true })[0];
-      const targets = this.currentAssociationTargets();
-      if (status === 'linked' && entry && ![...entry.projects, ...entry.problems].some((link) => resolveAssociationPath(link, targets))) { await this.editInputAssociations(entry, true); return; }
-      await changeInboxState(this.app, path, sha256(raw), status, () => this.currentAssociationTargets()); await this.refreshAffected(path);
+      const raw = await this.app.vault.read(file);
+      await changeInboxState(this.app, path, sha256(raw), status); await this.refreshAffected(path);
     } catch (error) { new Notice(String(error)); this.renderCurrent(); }
   }
 }

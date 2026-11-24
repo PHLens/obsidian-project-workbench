@@ -1,9 +1,10 @@
+import { renderInboxBadge } from './inbox-notification';
 import type { ProjectSummary } from '../../model/types';
 import type { WorkbenchPanel, WorkbenchViewState } from '../../model/view-state';
 import type { WorkbenchActions } from './workbench-shell';
 import { renderIcon } from './icon';
 
-export function renderProjectSidebar(container: HTMLElement, projects: ProjectSummary[], state: WorkbenchViewState, actions: WorkbenchActions): HTMLElement {
+export function renderProjectSidebar(container: HTMLElement, projects: ProjectSummary[], state: WorkbenchViewState, actions: WorkbenchActions, pendingCount = 0): HTMLElement {
   const aside = container.createDiv({ cls: 'rw-sidebar' });
   const projectGroup = aside.createDiv({ cls: 'rw-sidebar-group' });
   projectGroup.createEl('div', { cls: 'rw-sidebar-label', text: '研究项目' });
@@ -23,7 +24,11 @@ export function renderProjectSidebar(container: HTMLElement, projects: ProjectSu
   ];
   for (const [panel, icon, label] of entries) {
     const item = nav.createEl('button', { cls: `rw-nav-item ${state.panel === panel ? 'is-active' : ''}` });
-    const navIcon = item.createSpan({ cls: 'rw-nav-icon' }); renderIcon(navIcon, icon); item.createSpan({ text: label }); item.onclick = () => actions.selectPanel(panel);
+    item.dataset.panel = panel; item.setAttribute('aria-label', label);
+    if (panel === 'inbox') { item.setAttribute('aria-description', `${pendingCount} 条待处理资料`); item.title = `${pendingCount} 条待处理资料`; }
+    const navIcon = item.createSpan({ cls: 'rw-nav-icon' }); renderIcon(navIcon, icon); item.createSpan({ cls: 'rw-nav-label', text: label });
+    if (panel === 'inbox') renderInboxBadge(item, pendingCount);
+    item.onclick = () => panel === 'inbox' ? actions.openPendingInbox() : actions.selectPanel(panel);
   }
   aside.createDiv({ cls: 'rw-sidebar-spacer' });
   const note = aside.createEl('button', { cls: `rw-nav-item ${state.panel === 'project-note' ? 'is-active' : ''}` });

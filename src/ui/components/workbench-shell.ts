@@ -1,6 +1,6 @@
 import type { ProjectSnapshot, ProjectSummary, TimelineEvent, ProblemSummary, PendingInputSummary, VaultFile } from '../../model/types';
 import { filterWorkbenchItems } from '../../model/project-snapshot';
-import type { InboxEntry, InboxView, InputKind } from '../../model/inbox';
+import { getInboxCounts, type InboxEntry, type InboxView, type InputKind, type InboxStatus } from '../../model/inbox';
 import type { WorkbenchViewState } from '../../model/view-state';
 import type { CaptureContext } from '../modals/inbox-capture-modal';
 import type { EditableProperty, EntityKind } from '../property-model';
@@ -40,13 +40,14 @@ export interface WorkbenchActions {
   editGoals: () => void;
   openRecords: () => void;
   openInbox: () => void;
+  openPendingInbox: () => void;
   archive: (path: string) => void;
   edit: (path: string) => void;
   editProperty: (path: string, entity: EntityKind, field: EditableProperty, anchor: HTMLElement) => void;
   toggleFocus: (problem: ProblemSummary) => void;
   openEvent: (event: TimelineEvent) => void;
   openPending: (input: PendingInputSummary) => void;
-  transitionPending: (input: PendingInputSummary, status: 'pending' | 'linked' | 'deferred' | 'reference') => void;
+  transitionPending: (input: PendingInputSummary, status: InboxStatus) => void;
   openSource: (entry: InboxEntry) => void;
   editInputAssociations: (entry: InboxEntry) => void;
   viewMaterial: (kind: 'project' | 'problem', path: string) => void;
@@ -74,7 +75,7 @@ export function renderWorkbench(container: HTMLElement, context: WorkbenchRender
   const root = container.createDiv({ cls: `research-workbench rw-shell rw-density-${context.state.density}` }); root.dataset.panel = context.state.panel;
   renderMainHeader(root, context, actions);
   const layout = root.createDiv({ cls: `rw-layout ${context.state.panel === 'workspace' && context.snapshot ? '' : 'rw-layout-two-column'}` });
-  renderProjectSidebar(layout, context.projects, context.state, actions);
+  renderProjectSidebar(layout, context.projects, context.state, actions, getInboxCounts(context.inbox ?? []).pending);
   const main = layout.createDiv({ cls: 'rw-main-column' });
   const snapshot = context.snapshot;
   if (context.state.panel === 'inbox') {

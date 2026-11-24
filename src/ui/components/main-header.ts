@@ -1,3 +1,5 @@
+import { getInboxCounts } from '../../model/inbox';
+import { renderInboxNotification } from './inbox-notification';
 import { renderIcon } from './icon';
 import type { WorkbenchActions, WorkbenchRenderContext } from './workbench-shell';
 
@@ -13,6 +15,7 @@ export function renderMainHeader(container: HTMLElement, context: WorkbenchRende
   input.oninput = () => actions.setQuery(input.value);
   const searchIcon = search.createSpan({ cls: 'rw-search-icon' }); renderIcon(searchIcon, 'search');
   const capture = header.createDiv({ cls: 'rw-record-actions' });
+  renderInboxNotification(capture, getInboxCounts(context.inbox ?? []).pending, actions.openPendingInbox);
   capture.createEl('button', { cls: 'rw-button rw-primary', text: '＋ 新增资料' }).onclick = () => actions.recordIdea();
   capture.createEl('button', { cls: 'rw-button', text: '引用笔记' }).onclick = () => actions.addExistingNote();
   return header;
