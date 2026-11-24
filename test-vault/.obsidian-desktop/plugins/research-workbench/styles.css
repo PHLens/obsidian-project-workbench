@@ -260,3 +260,84 @@
 .rw-association-chips .rw-source-tag { min-width:0; max-width:100%; white-space:normal; overflow-wrap:anywhere; }
 .rw-association-chips .rw-source-tag > span { min-width:0; overflow-wrap:anywhere; }
 .rw-association-chips .rw-source-tag > button { flex:0 0 auto; align-self:center; }
+
+/* Column geometry is updated without replacing the workbench content. */
+.research-workbench.rw-shell [hidden] { display:none !important; }
+.research-workbench.rw-shell .rw-layout,
+.research-workbench.rw-shell .rw-layout.rw-layout-two-column {
+  position:relative; display:grid;
+  grid-template-columns:var(--rw-left-width,220px) var(--rw-left-grip,8px) minmax(0,1fr) var(--rw-right-grip,8px) var(--rw-right-width,300px);
+}
+.research-workbench.rw-shell .rw-sidebar { grid-column:1; display:flex; flex-direction:column; padding:20px 14px; border:0; }
+.research-workbench.rw-shell .rw-sidebar-group { display:flex; flex-direction:column; flex-wrap:nowrap; overflow:visible; }
+.research-workbench.rw-shell .rw-sidebar-nav { display:flex; flex-direction:column; overflow:visible; }
+.research-workbench.rw-shell :is(.rw-sidebar-label,.rw-sidebar-rule,.rw-sidebar-spacer,.rw-sidebar-hint) { display:block; }
+.research-workbench.rw-shell :is(.rw-project-choice,.rw-sidebar-action,.rw-nav-item) { flex:initial; width:100%; white-space:normal; }
+.research-workbench.rw-shell .rw-main-column { grid-column:3; min-width:0; padding:28px clamp(14px,3cqi,36px) 36px; }
+.research-workbench.rw-shell .rw-right-rail { grid-column:5; display:flex; flex-direction:column; align-items:stretch; gap:20px; padding:24px 18px; border:0; }
+.research-workbench.rw-shell .rw-column-controls { grid-column:1 / -1; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.research-workbench.rw-shell .rw-column-controls button { font-size:12px; padding:5px 9px; }
+.research-workbench.rw-shell .rw-column-controls [aria-pressed="true"] { color:var(--rw-accent); border-color:var(--rw-accent); background:var(--rw-accent-soft); }
+.research-workbench.rw-shell button.rw-column-close { align-self:flex-end; padding:4px 7px; font-size:12px; margin:0 0 4px; }
+.research-workbench.rw-shell button.rw-column-separator {
+  position:relative; align-self:stretch; width:8px; max-width:none; height:auto; padding:0; margin:0; border:0;
+  border-radius:0; box-shadow:none; background:transparent; cursor:col-resize; touch-action:none;
+}
+.research-workbench.rw-shell [data-column-resize="left"] { grid-column:2; }
+.research-workbench.rw-shell [data-column-resize="right"] { grid-column:4; }
+.research-workbench.rw-shell .rw-column-separator::before { content:""; position:absolute; inset:0 auto 0 3px; width:1px; background:var(--rw-border); }
+.research-workbench.rw-shell .rw-column-separator::after { content:""; position:absolute; inset:0 -4px; }
+.research-workbench.rw-shell .rw-column-separator:is(:hover,:focus-visible)::before { background:var(--rw-accent); width:2px; }
+.research-workbench.rw-shell.rw-resizing-columns { user-select:none; cursor:col-resize; }
+.research-workbench.rw-shell .rw-column-backdrop { position:absolute; inset:0; z-index:4; background:color-mix(in srgb,var(--text-normal) 18%,transparent); }
+.research-workbench.rw-shell.rw-columns-narrow .rw-layout { grid-template-columns:minmax(0,1fr); }
+.research-workbench.rw-shell.rw-columns-narrow .rw-main-column { grid-column:1; padding:22px 14px 30px; }
+.research-workbench.rw-shell.rw-columns-narrow :is(.rw-sidebar,.rw-right-rail) {
+  position:absolute; top:0; z-index:5; grid-column:auto; width:min(320px,88%); min-height:100%;
+  background:var(--rw-surface); box-shadow:0 8px 24px color-mix(in srgb,var(--text-normal) 15%,transparent);
+}
+.research-workbench.rw-shell.rw-columns-narrow .rw-sidebar { left:0; border-right:1px solid var(--rw-border); }
+.research-workbench.rw-shell.rw-columns-narrow .rw-right-rail { right:0; border-left:1px solid var(--rw-border); }
+.research-workbench.rw-shell.rw-columns-narrow .rw-column-separator { display:none; }
+
+/* Layered problem cards keep the overview and Next Step independent. */
+.research-workbench.rw-shell .rw-problem-table { display:flex; flex-direction:column; gap:14px; overflow:visible; border:0; border-radius:0; }
+.research-workbench.rw-shell .rw-problem-card {
+  display:block; min-height:0; padding:18px; border:1px solid var(--rw-border); border-radius:12px;
+  background:var(--rw-surface); cursor:auto;
+}
+.research-workbench.rw-shell .rw-problem-card.is-focus { padding-left:16px; border-left:3px solid var(--rw-accent); }
+.research-workbench.rw-shell .rw-problem-card:hover { background:var(--rw-surface); }
+.research-workbench.rw-shell .rw-problem-focus-label { color:var(--rw-accent); font-size:12px; margin-bottom:7px; }
+.research-workbench.rw-shell .rw-problem-identity { flex-wrap:wrap; align-items:flex-start; gap:8px; }
+.research-workbench.rw-shell .rw-problem-identity > strong { flex:1 1 180px; overflow:visible; white-space:normal; }
+.research-workbench.rw-shell button.rw-problem-title { display:block; width:100%; padding:0; border:0; box-shadow:none; background:transparent; text-align:left; color:var(--text-normal); font:inherit; font-size:16px; font-weight:600; overflow-wrap:anywhere; }
+.research-workbench.rw-shell button.rw-problem-title:hover { color:var(--rw-accent); }
+.research-workbench.rw-shell .rw-problem-identity .rw-status { position:static; margin:0; }
+.research-workbench.rw-shell .rw-problem-summary { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; margin:9px 0 12px; }
+.research-workbench.rw-shell .rw-problem-meta { align-items:flex-start; gap:8px 12px; }
+.research-workbench.rw-shell .rw-problem-meta .rw-property-group { min-width:0; max-width:100%; flex-wrap:wrap; }
+.research-workbench.rw-shell .rw-next-steps { min-width:0; margin-top:15px; padding-top:13px; border-top:1px solid var(--rw-border); }
+.research-workbench.rw-shell .rw-next-steps-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 10px; }
+.research-workbench.rw-shell .rw-next-steps-head > strong { font-weight:600; }
+.research-workbench.rw-shell .rw-next-steps-head > .rw-muted { margin-left:auto; font-size:12px; }
+.research-workbench.rw-shell .rw-next-steps-list { display:flex; flex-direction:column; gap:8px; margin:11px 0 0; padding:0; list-style:none; }
+.research-workbench.rw-shell .rw-next-step { display:flex; align-items:flex-start; gap:8px; min-width:0; }
+.research-workbench.rw-shell .rw-next-step-text { flex:1; min-width:0; overflow-wrap:anywhere; }
+.research-workbench.rw-shell .rw-next-step.is-completed .rw-next-step-text { color:var(--rw-muted); text-decoration:line-through; }
+.research-workbench.rw-shell .rw-next-step-checkbox { flex:0 0 auto; margin:3px 0 0; opacity:.8; }
+.research-workbench.rw-shell .rw-next-step-bullet { flex:0 0 6px; width:6px; height:6px; margin:8px 5px 0; border-radius:50%; background:var(--rw-muted); }
+.research-workbench.rw-shell .rw-next-steps-empty { margin:9px 0 0; }
+.research-workbench.rw-shell :is(.rw-next-steps-head,.rw-problem-footer) .rw-link-button { margin:0; }
+.research-workbench.rw-shell .rw-next-steps-toggle { margin-top:10px; }
+.research-workbench.rw-shell .rw-problem-footer { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin-top:17px; }
+.research-workbench.rw-shell .rw-problem-footer .rw-problem-last { display:block; grid-column:auto; margin-right:auto; font-size:12px; }
+.research-workbench.rw-shell .rw-problem-material-actions { display:flex; flex-wrap:wrap; gap:8px 12px; margin:0; }
+.research-workbench.rw-shell .rw-card-menu { min-width:0; max-width:100%; font-size:12px; }
+.research-workbench.rw-shell .rw-card-menu summary { color:var(--rw-muted); cursor:pointer; }
+.research-workbench.rw-shell .rw-card-menu[open] { flex-basis:100%; }
+.research-workbench.rw-shell .rw-card-menu .rw-row-menu { display:flex; flex-wrap:wrap; position:static; gap:8px; margin-top:8px; opacity:1; }
+@media (pointer:coarse) {
+  .research-workbench.rw-shell .rw-column-separator::after { inset:0 -18px; }
+  .research-workbench.rw-shell :is(.rw-column-controls button,.rw-column-close,.rw-next-steps-toggle,.rw-card-menu summary) { min-height:44px; }
+}
