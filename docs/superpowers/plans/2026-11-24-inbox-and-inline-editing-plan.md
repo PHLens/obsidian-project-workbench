@@ -59,11 +59,11 @@
 - `getPropertySuggestions(files, entity, field): string[]` derives suggestions from cached matching entity notes.
 - `saveInlineProperty(app, path, expectedHash, field, value): Promise<WriteResult>` validates field-specific values and changes one frontmatter field.
 
-- [ ] Write tests: title-only creation, filename collisions, empty/missing directory rejection, reference preservation, full-path link serialization, association changes independent of processing state, stale singular-link removal, unresolved-link retention, linked-without-target rejection, unsupported/blank scalar rejection, empty tags, the two-goal invariant, and stale-hash rejection with no write.
-- [ ] Run `npm test -- tests/writes/inbox-writes.test.ts tests/writes/inline-properties.test.ts`; expect the new behavior to fail before implementation.
-- [ ] Implement writes using YAML serialization and the existing protected helper. Validate the expected hash captured on editor opening, rather than replacing it at submit time.
-- [ ] Run focused write tests and the existing write suite; expect PASS.
-- [ ] Commit: `feat: protect inbox associations and inline property writes`.
+- [x] Write tests: title-only creation, filename collisions, empty/missing directory rejection, reference preservation, full-path link serialization, association changes independent of processing state, stale singular-link removal, unresolved-link retention, linked-without-target rejection, unsupported/blank scalar rejection, empty tags, the two-goal invariant, and stale-hash rejection with no write.
+- [x] Run `npm test -- tests/writes/inbox-writes.test.ts tests/writes/inline-properties.test.ts`; expect the new behavior to fail before implementation.
+- [x] Implement writes using YAML serialization and the existing protected helper. Validate the expected hash captured on editor opening, rather than replacing it at submit time.
+- [x] Run focused write tests and the existing write suite; expect PASS.
+- [x] Commit: `feat: protect inbox associations and inline property writes`.
 
 ## Task 3: Capture, association, and property editor components
 
