@@ -124,3 +124,24 @@
 .rw-modal-control, .rw-modal-textarea { display:block; width:100%; margin:0; padding:8px 10px; box-sizing:border-box; }
 .rw-modal-textarea { min-height:80px; resize:vertical; }
 .rw-modal-button { margin-top:8px; }
+
+/* Inbox capture and direct property editing. */
+.rw-form-error { color:var(--text-error,#c33); font-size:13px; margin:8px 0; white-space:pre-wrap; }
+.rw-association-chips { display:flex; flex-wrap:wrap; gap:6px; min-width:0; }
+.rw-association-chips button { border:0; background:transparent; padding:0 3px; color:inherit; cursor:pointer; }
+.rw-association-chips .is-unresolved { border-style:dashed; }
+.rw-association-results { max-height:180px; overflow:auto; display:flex; flex-direction:column; gap:4px; }
+.rw-association-option { display:flex; gap:9px; align-items:center; padding:6px 8px; border:1px solid var(--background-modifier-border); border-radius:7px; cursor:pointer; }
+.rw-association-option span { min-width:0; }
+.rw-association-option strong, .rw-association-option small { display:block; overflow-wrap:anywhere; }
+.rw-association-option small { color:var(--text-muted); font-size:11px; }
+.rw-note-result { height:auto; min-height:34px; white-space:normal; text-align:left; overflow-wrap:anywhere; }
+.rw-reference-selection { font-size:12px; color:var(--interactive-accent); overflow-wrap:anywhere; }
+.rw-property-button { display:inline-flex; align-items:center; min-height:27px; max-width:100%; padding:3px 9px; border:1px solid var(--background-modifier-border); border-radius:999px; background:transparent; color:var(--interactive-accent); font:inherit; font-size:12px; cursor:pointer; white-space:normal; overflow-wrap:anywhere; text-align:left; }
+.rw-property-button:hover, .rw-property-button:focus-visible { border-color:var(--interactive-accent); background:var(--background-modifier-hover); }
+.rw-property-editor { position:fixed; z-index:1000; display:flex; flex-direction:column; gap:8px; width:320px; max-height:min(420px,85vh); overflow:auto; padding:16px; border:1px solid var(--background-modifier-border,#aaa); border-radius:12px; background:var(--background-primary,#fff); color:var(--text-normal,#222); box-shadow:0 10px 30px rgba(0,0,0,.2); }
+.rw-property-options { display:flex; flex-direction:column; gap:4px; max-height:180px; overflow:auto; }
+.rw-property-option { height:auto; min-height:30px; padding:6px 9px; text-align:left; background:transparent; border:0; color:inherit; cursor:pointer; white-space:normal; overflow-wrap:anywhere; }
+.rw-property-option[aria-selected=true], .rw-property-option:hover { background:var(--background-modifier-hover,#eee); }
+.rw-editor-actions { display:flex; justify-content:flex-end; gap:8px; }
+.rw-property-editor.is-mobile { left:12px; right:12px; bottom:16px; top:auto; width:auto; max-height:75vh; }

@@ -75,11 +75,11 @@
 - `openPropertyEditor(anchor, options)` provides scalar, tags, and multiline text modes, with cached suggestions and an async save callback.
 - `renderPropertyButton(container, options)` renders an accessible, individually labeled trigger with a stable focus identity.
 
-- [ ] Add test-only DOM support. Write real component tests for title-only capture, reference selection, context defaults, multi-association changes, unresolved chips, single-field invocation, custom values, empty tags, Escape/outside cancellation, save failures retaining input, focus restoration, keyboard navigation, and narrow-screen dialog behavior.
-- [ ] Run the new component tests; expect failures before implementing the components.
-- [ ] Implement components with readable labels, bounded candidate result lists, and local validation. Capture and association dialogs close only after successful saves. Property editors retain entered values on errors and apply no write on cancellation.
-- [ ] Run component tests and type checking; expect PASS.
-- [ ] Commit: `feat: add capture and inline property editors`.
+- [x] Add test-only DOM support. Write real component tests for title-only capture, reference selection, context defaults, multi-association changes, unresolved chips, single-field invocation, custom values, empty tags, Escape/outside cancellation, save failures retaining input, focus restoration, keyboard navigation, and narrow-screen dialog behavior.
+- [x] Run the new component tests; expect failures before implementing the components.
+- [x] Implement components with readable labels, bounded candidate result lists, and local validation. Capture and association dialogs close only after successful saves. Property editors retain entered values on errors and apply no write on cancellation.
+- [x] Run component tests and type checking; expect PASS.
+- [x] Commit: `feat: add capture and inline property editors`.
 
 ## Task 4: Persistent shell and complete workbench flows
 

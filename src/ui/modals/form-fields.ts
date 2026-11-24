@@ -4,7 +4,7 @@ export type ModalFieldKey =
   | 'currentGate' | 'nextMilestone'
   | 'projectName' | 'projectGoal' | 'firstProblem'
   | 'problemTitle' | 'problemQuestion' | 'taskTitle'
-  | 'pendingText' | 'pendingSource' | 'associateProblem';
+  | 'pendingText' | 'pendingSource' | 'associateProblem' | 'captureTitle' | 'captureContent' | 'captureKind';
 
 interface ModalFieldCopy { label: string; description: string; example?: string; }
 
@@ -13,6 +13,9 @@ export function getModalFieldAttributes(options: { key: ModalFieldKey; control: 
 }
 
 const FIELD_COPY: Record<ModalFieldKey, ModalFieldCopy> = {
+  captureTitle: { label: '资料标题', description: '写一个便于稍后找到的标题；可以先记录，再整理关联。' },
+  captureKind: { label: '资料类型', description: '选择论文、想法或普通笔记。' },
+  captureContent: { label: '内容或简述', description: '可选：写下要点、想法或需要继续阅读的内容。' },
   problemStatus: { label: '状态', description: '说明这个研究问题当前处于什么生命周期状态。', example: '示例：exploring、active、completed' },
   problemStage: { label: '研究阶段', description: '说明问题当前位于研究流程的哪个阶段。', example: '示例：inbox、analysis、evaluation' },
   researchRole: { label: '资源角色', description: '说明它在研究中的作用：主线、探索支线或暂存。', example: '示例：mainline、probe、parked' },
