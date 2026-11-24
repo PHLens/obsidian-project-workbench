@@ -39,7 +39,7 @@ export function buildProjectIndex(files: VaultFile[], options: { includeArchived
 }
 
 function problemSummary(note: Note, focus: Set<string>): ProblemSummary {
-  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, 'problem') };
+  return { path: note.path, title: titleFor(note), status: asString(note.frontmatter.status), stage: asString(note.frontmatter.stage), researchRole: asString(note.frontmatter.research_role), tags: asLinks(note.frontmatter.tags), project: asString(note.frontmatter.project), focus: focus.has(note.path), archived: isArchived(note), lastUpdated: asString(note.frontmatter.dateModified) ?? asString(note.frontmatter.updated) ?? asString(note.frontmatter.date), nextSteps: problemNextSteps(note), summary: summaryText(note), searchText: note.content, source: source(note.path, 'problem') };
 }
 
 export function resolveProjectProblems(project: Note, notes: Note[]): { confirmed: ProblemSummary[]; empty: boolean } {

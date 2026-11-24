@@ -24,11 +24,13 @@ export async function createInboxEntry(app: App, input: InboxCaptureInput, direc
   await app.vault.create(path, `---\n${stringify(fields).trim()}\n---\n# ${title}\n\n${input.content.trim()}\n`);
   return path;
 }
-export function updateInboxAssociations(app: App, path: string, expectedHash: string, links: InboxAssociations): Promise<WriteResult> {
+export function updateInboxAssociations(app: App, path: string, expectedHash: string, links: InboxAssociations, completion?: { status: 'linked'; validTargets: Array<{ path: string }> }): Promise<WriteResult> {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (fm) => {
+    if (completion && ![...links.projects, ...links.problems].some((link) => !!resolveAssociationPath(link, completion.validTargets))) throw new Error('请先关联一个有效的项目或研究问题。');
     fm.projects = associationLinks(links.projects);
     fm.problems = associationLinks(links.problems);
     delete fm.project;
+    if (completion) { fm.processing_status = 'linked'; fm.pending = false; }
   });
 }
 export function changeInboxState(app: App, path: string, expectedHash: string, status: 'pending' | 'linked' | 'deferred' | 'reference', validTargets: Array<{ path: string }>): Promise<WriteResult> {

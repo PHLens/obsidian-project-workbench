@@ -47,4 +47,12 @@ describe('protected Inbox writes', () => {
     await expect(updateInboxAssociations(test.app, 'Inputs/I.md', sha256('# Original'), { projects: [], problems: [] })).rejects.toThrow('冲突');
     expect(test.modify).not.toHaveBeenCalled();
   });
+  it('associates and marks linked atomically when completing processing', async () => {
+    const raw = '---\npending: true\nprocessing_status: pending\n---\n# Body';
+    const test = memoryVault({ 'Inputs/I.md': raw });
+    await updateInboxAssociations(test.app, 'Inputs/I.md', sha256(raw), { projects: [], problems: ['Problems/Q.md'] }, { status: 'linked', validTargets: [{ path: 'Problems/Q.md' }] });
+    expect(fields(test.contents.get('Inputs/I.md')!)).toMatchObject({ pending: false, processing_status: 'linked', problems: ['[[Problems/Q.md]]'] });
+    expect(test.modify).toHaveBeenCalledTimes(1);
+  });
+
 });

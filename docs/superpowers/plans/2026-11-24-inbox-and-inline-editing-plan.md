@@ -91,11 +91,11 @@
 - Actions expose global/context capture, reference capture, real association editing, source opening, Inbox filtering, and field-specific property editing.
 - The view captures content hashes at editor opening, uses Task 2 writes, and invalidates affected cached files after successful writes.
 
-- [ ] Write integration tests: global Inbox and capture remain available with no projects; the shared header remains present on every panel; global/project/problem contexts set correct defaults; association and state updates refresh correct lists; each status/stage/tag trigger does not open the row's note; custom values update only their field; cached search and scope-excluded events cause no unrelated reads.
-- [ ] Run those tests and observe the expected failure of the current project-dependent flow.
-- [ ] Connect the model, writes, and components. Show a configured-directory prompt instead of creating fallback folders. Add command-palette access and keep existing command IDs usable. Render project material summaries and problem-filtered Inbox links, and expose inline project status/goals and problem status/stage/role/tags.
-- [ ] Run all UI/model/write tests and type checking; expect PASS.
-- [ ] Commit: `feat: connect global inbox and direct property editing`.
+- [x] Write integration tests: global Inbox and capture remain available with no projects; the shared header remains present on every panel; global/project/problem contexts set correct defaults; association and state updates refresh correct lists; each status/stage/tag trigger does not open the row's note; custom values update only their field; cached search and scope-excluded events cause no unrelated reads.
+- [x] Run those tests and observe the expected failure of the current project-dependent flow.
+- [x] Connect the model, writes, and components. Show a configured-directory prompt instead of creating fallback folders. Add command-palette access and keep existing command IDs usable. Render project material summaries and problem-filtered Inbox links, and expose inline project status/goals and problem status/stage/role/tags.
+- [x] Run all UI/model/write tests and type checking; expect PASS.
+- [x] Commit: `feat: connect global inbox and direct property editing`.
 
 ## Task 5: End-to-end verification and delivery
 

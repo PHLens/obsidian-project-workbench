@@ -2,7 +2,7 @@ export type Frontmatter = Record<string, unknown>;
 export interface VaultFile { path: string; content: string; mtime?: number; }
 export interface Note extends VaultFile { frontmatter: Frontmatter; body?: string; }
 export interface SourceRef { path: string; kind: string; label?: string; }
-export interface ProblemSummary { path: string; title: string; status?: string; stage?: string; researchRole?: string; project?: string; focus: boolean; archived?: boolean; lastUpdated?: string; nextSteps: string[]; summary?: string; searchText?: string; source: SourceRef; }
+export interface ProblemSummary { path: string; title: string; status?: string; stage?: string; researchRole?: string; tags?: string[]; project?: string; focus: boolean; archived?: boolean; lastUpdated?: string; nextSteps: string[]; summary?: string; searchText?: string; source: SourceRef; }
 export interface TaskSummary { path: string; title: string; status?: string; priority?: string; due?: string; projects: string[]; archived?: boolean; searchText?: string; source: SourceRef; }
 export interface PendingInputSummary { path: string; title: string; status: string; project?: string; projects?: string[]; problems?: string[]; archived?: boolean; searchText?: string; source: SourceRef; }
 export interface ChangeSummary { path: string; title: string; date?: string; source: SourceRef; }

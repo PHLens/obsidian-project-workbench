@@ -12,6 +12,8 @@ export function renderMainHeader(container: HTMLElement, context: WorkbenchRende
   input.setAttribute('role', SEARCH_CONTROL_CONTRACT.role);
   input.oninput = () => actions.setQuery(input.value);
   const searchIcon = search.createSpan({ cls: 'rw-search-icon' }); renderIcon(searchIcon, 'search');
-  const record = header.createEl('button', { cls: 'rw-button rw-record-button', text: '＋ 记录想法' }); record.onclick = actions.recordIdea;
+  const capture = header.createDiv({ cls: 'rw-record-actions' });
+  capture.createEl('button', { cls: 'rw-button rw-primary', text: '＋ 新增资料' }).onclick = () => actions.recordIdea();
+  capture.createEl('button', { cls: 'rw-button', text: '引用笔记' }).onclick = () => actions.addExistingNote();
   return header;
 }
