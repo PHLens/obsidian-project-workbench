@@ -1,6 +1,6 @@
 import { parse, stringify } from 'yaml';
 import type { App, TFile } from 'obsidian';
-import { readTemplate, type TemplatePaths } from './template-renderer';
+import { localDate, readTemplate, type TemplatePaths } from './template-renderer';
 
 export interface ProjectBundleInput { name: string; goal: string; firstProblem: string; }
 export interface WriteResult { path: string; changed: boolean; oldHash: string; newHash: string; }
@@ -46,7 +46,7 @@ export async function createProjectBundle(app: App, input: ProjectBundleInput, d
   const text = createProjectBundleText(input, directories); validateMarkdownPath(text.projectPath); validateMarkdownPath(text.problemPath);
   if (app.vault.getAbstractFileByPath(text.projectPath) || app.vault.getAbstractFileByPath(text.problemPath)) throw new Error('Project or first problem already exists.');
   const projectName = input.name.trim(), problemTitle = input.firstProblem.trim();
-  const variables = { title: projectName, name: projectName, goal: input.goal.trim(), question: problemTitle, project: projectName, projectPath: text.projectPath, problem: problemTitle, problemPath: text.problemPath, status: 'proposed', stage: 'inbox', researchRole: 'mainline', date: new Date().toISOString().slice(0, 10), content: '' };
+  const variables = { title: projectName, name: projectName, goal: input.goal.trim(), question: problemTitle, project: projectName, projectPath: text.projectPath, problem: problemTitle, problemPath: text.problemPath, status: 'proposed', stage: 'inbox', researchRole: 'mainline', date: localDate(), content: '' };
   const projectTemplate = await renderOrBuiltIn(app, 'project', variables, text.project, templatePaths);
   const problemTemplate = await renderOrBuiltIn(app, 'problem', variables, text.problem, templatePaths);
   const projectText = applyFrontmatterPatch(projectTemplate, { type: 'project', title: projectName, status: 'proposed', current_gate: input.goal.trim(), problems: ['[[' + basename(text.problemPath) + ']]'], focus_problems: ['[[' + basename(text.problemPath) + ']]'] });
@@ -63,7 +63,7 @@ export async function createProblemForProject(app: App, projectPath: string, inp
   const safe = input.title.trim(); const problemPath = (directories.problemDirectories?.[0] ?? 'Problems') + '/' + safe + '.md'; validateMarkdownPath(problemPath); if (app.vault.getAbstractFileByPath(problemPath)) throw new Error('Problem file already exists.');
   const project = await readTFile(app, projectPath); const projectRaw = await app.vault.read(project); const projectTitle = project.basename;
   const builtIn = '---\ntype: problem\ntags: [research, problem]\nproject: "[[' + projectTitle + ']]"\nstatus: ' + input.status + '\nstage: ' + input.stage + '\nresearch_role: ' + input.researchRole + '\n---\n# ' + safe + '\n\n## Overview\n\n' + input.question + '\n\n## Next Step\n\n';
-  const content = await renderOrBuiltIn(app, 'problem', { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: new Date().toISOString().slice(0, 10), goal: '', content: '' }, builtIn, templatePaths);
+  const content = await renderOrBuiltIn(app, 'problem', { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: localDate(), goal: '', content: '' }, builtIn, templatePaths);
   const created = await app.vault.create(problemPath, applyFrontmatterPatch(content, { type: 'problem', project: '[[' + projectTitle + ']]', status: input.status, stage: input.stage, research_role: input.researchRole }));
   try {
     const links = (frontmatter: Record<string, unknown>) => { const current = Array.isArray(frontmatter.problems) ? frontmatter.problems.filter((value): value is string => typeof value === 'string') : []; const link = '[[' + safe + ']]'; frontmatter.problems = [...new Set([...current, link])]; if (input.focus) { const focus = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value): value is string => typeof value === 'string') : []; frontmatter.focus_problems = [...new Set([...focus, link])]; } };
@@ -71,10 +71,10 @@ export async function createProblemForProject(app: App, projectPath: string, inp
   } catch (error) { await app.fileManager.trashFile(created); throw error; }
   return problemPath;
 }
-export async function createTaskEntry(app: App, input: { title: string; project: string }, directory: string, templatePaths: CreationTemplatePaths = {}): Promise<string> {
+export async function createTaskEntry(app: App, input: { title: string; project: string; projectPath?: string }, directory: string, templatePaths: CreationTemplatePaths = {}): Promise<string> {
   const title = input.title.trim(); const path = directory + '/' + title + '.md'; validateMarkdownPath(path); if (app.vault.getAbstractFileByPath(path)) throw new Error('Task file already exists.');
   const builtIn = '---\nstatus: open\ntags: [task]\nprojects: ["[[' + input.project + ']]"]\n---\n# ' + title + '\n';
-  const rendered = await renderOrBuiltIn(app, 'task', { title, name: title, project: input.project, projectPath: '', problem: '', problemPath: '', goal: '', question: '', content: '', kind: 'task', source: '', status: 'open', stage: '', researchRole: '', date: new Date().toISOString().slice(0, 10) }, builtIn, templatePaths);
+  const rendered = await renderOrBuiltIn(app, 'task', { title, name: title, project: input.project, projectPath: input.projectPath ?? '', problem: '', problemPath: '', goal: '', question: '', content: '', kind: 'task', source: '', status: 'open', stage: '', researchRole: '', date: localDate() }, builtIn, templatePaths);
   await app.vault.create(path, applyFrontmatterPatch(rendered, { status: 'open', tags: ['task'], projects: ['[[' + input.project + ']]'] }));
   return path;
 }

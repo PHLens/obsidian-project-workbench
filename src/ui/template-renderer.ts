@@ -4,6 +4,7 @@ import type { App, TFile } from 'obsidian';
 export type TemplateType = 'project' | 'problem' | 'task' | 'paper' | 'idea' | 'note';
 export type TemplatePaths = Record<TemplateType, string>;
 export const DEFAULT_TEMPLATE_PATHS: TemplatePaths = { project: '', problem: '', task: '', paper: '', idea: '', note: '' };
+export function localDate(date = new Date()): string { const pad = (value: number) => String(value).padStart(2, '0'); return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()); }
 
 export function normalizeTemplatePaths(value: unknown): TemplatePaths {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -36,7 +37,9 @@ function frontmatterIsValid(raw: string): void {
 
 export function renderTemplate(raw: string, variables: Record<string, string>): string {
   const allowed = new Set(Object.keys(variables));
-  if ((raw.includes('{{') && !raw.includes('}}')) || (raw.includes('}}') && !raw.includes('{{')) || /{{(?![A-Za-z][A-Za-z0-9]*}})/.test(raw)) {
+  const known = /{{([A-Za-z][A-Za-z0-9]*)}}/g;
+  const remainder = raw.replace(known, '');
+  if ((remainder.includes('{{') || remainder.includes('}}')) || /{{(?![A-Za-z][A-Za-z0-9]*}})/.test(raw)) {
     throw new Error('模板变量格式无效，请使用 {{variable}}。');
   }
   return raw.replace(/{{([A-Za-z][A-Za-z0-9]*)}}/g, (_match, name: string) => {

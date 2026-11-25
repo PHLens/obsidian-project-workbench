@@ -21,6 +21,7 @@ describe('custom creation templates', () => {
     expect(renderTemplate('# {{title}}\\n{{content}}\\n', { title: 'Paper', content: 'Body' })).toBe('# Paper\\nBody\\n');
     expect(() => renderTemplate('{{unknown}}', {})).toThrow(/unknown/i);
     expect(() => renderTemplate('{{title', { title: 'Paper' })).toThrow(/variable/i);
+    expect(() => renderTemplate('{{title}}}}', { title: 'Paper' })).toThrow(/variable/i);
   });
 
   it('reads a template at submit time and validates rendered YAML while preserving body', async () => {

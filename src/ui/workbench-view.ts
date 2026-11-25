@@ -68,6 +68,7 @@ export class ResearchWorkbenchView extends ItemView {
     this.refreshScheduler = createRefreshScheduler(() => { if (this.dirtyPaths.size && this.isViewVisible()) void this.refresh(); });
     const changed = (path: string) => {
       if (this.disposed) return;
+      if (this.isTemplatePath(path)) return;
       const directories = allDataDirectories(this.dataScope);
       if (isPathInDirectories(path, directories) || directories.some((directory) => directory.startsWith(`${path}/`))) {
         this.dirtyPaths.add(path); this.refreshScheduler?.request();
@@ -115,6 +116,7 @@ export class ResearchWorkbenchView extends ItemView {
     this.columnController?.update(this.columnPreferences);
   }
   setTemplatePaths(value: Partial<TemplatePaths>): void { this.templatePaths = normalizeTemplatePaths(value); }
+  private isTemplatePath(path: string): boolean { return Object.values(this.templatePaths).some((templatePath) => templatePath === path); }
   private requireDirectory(key: keyof WorkbenchDataScope): string {
     const directory = this.dataScope[key][0];
     const labels: Record<keyof WorkbenchDataScope, string> = { projectDirectories: '项目', problemDirectories: '问题', taskDirectories: '任务', inputDirectories: '待讨论输入', recordDirectories: '进展记录' };
@@ -123,7 +125,7 @@ export class ResearchWorkbenchView extends ItemView {
   }
   private async files(generation = this.lifecycleVersion): Promise<VaultFile[]> {
     const directories = allDataDirectories(this.dataScope);
-    const files = this.app.vault.getMarkdownFiles().filter((file) => isPathInDirectories(file.path, directories));
+    const files = this.app.vault.getMarkdownFiles().filter((file) => !this.isTemplatePath(file.path) && isPathInDirectories(file.path, directories));
     const forced = new Set(this.dirtyPaths); this.dirtyPaths.clear();
     return this.fileCache.load(files, (file) => this.app.vault.read(file), forced, () => !this.disposed && generation === this.lifecycleVersion);
   }
@@ -318,7 +320,7 @@ export class ResearchWorkbenchView extends ItemView {
     }).open();
   }
   async createProblem(): Promise<void> { try { this.requireDirectory('problemDirectories'); } catch (error) { new Notice(String(error)); return; } new ProblemModal(this.app, async (result) => { if (!this.snapshot) return; const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: 'inbox', stage: 'inbox', researchRole: 'mainline', focus: false }, this.dataScope, this.templatePaths); await this.refresh(); await this.openFile(path); }).open(); }
-  async createTask(): Promise<void> { let directory: string; try { directory = this.requireDirectory('taskDirectories'); } catch (error) { new Notice(String(error)); return; } new TaskModal(this.app, async (title) => { await createTaskEntry(this.app, { title, project: this.snapshot?.project.title ?? 'Project' }, directory, this.templatePaths); await this.refresh(); }).open(); }
+  async createTask(): Promise<void> { let directory: string; try { directory = this.requireDirectory('taskDirectories'); } catch (error) { new Notice(String(error)); return; } new TaskModal(this.app, async (title) => { await createTaskEntry(this.app, { title, project: this.snapshot?.project.title ?? 'Project', projectPath: this.projectPath }, directory, this.templatePaths); await this.refresh(); }).open(); }
   async openGlobalInbox(): Promise<void> { this.state.panel = 'inbox'; this.state.inboxAssociation = null; this.state.inboxView = 'pending'; this.state.inboxKind = 'all'; this.state.query = ''; this.renderCurrent(); }
   async captureExistingNote(): Promise<void> { await this.openCapture('reference', {}); }
   async createPending(): Promise<void> { await this.openCapture('new', {}); }

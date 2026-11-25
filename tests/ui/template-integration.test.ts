@@ -20,4 +20,16 @@ describe('template settings in the live workbench', () => {
     expect((view as any).templatePaths).toMatchObject({ project: 'Templates/updated.md', problem: 'Templates/problem.md' });
     view.onunload();
   });
+
+  it('excludes a configured template inside a data directory from snapshots', async () => {
+    setupDom();
+    const test = interactiveVault({
+      'Projects/P.md': '---\ntype: project\n---\n# P',
+      'Projects/_template.md': '---\ntype: project\n---\n# Template content',
+    });
+    const view = new ResearchWorkbenchView({ app: test.app } as unknown as WorkspaceLeaf, { projectDirectories: ['Projects'] }, { templatePaths: { project: 'Projects/_template.md' } });
+    await view.onOpen();
+    expect((view as any).cachedProjects.map((project: { path: string }) => project.path)).toEqual(['Projects/P.md']);
+    view.onunload();
+  });
 });

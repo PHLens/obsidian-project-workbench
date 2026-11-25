@@ -11,7 +11,7 @@ function appWithTemplates() {
     'Projects/Existing.md': '---\\ntype: project\\n---\\n# Existing',
     'Templates/project.md': '---\\ntype: custom-project\\ncustom: "{{goal}}"\\n---\\n# {{name}}\\n\\n{{goal}}\\n',
     'Templates/problem.md': '---\\ntype: custom-problem\\ncustom: "{{question}}"\\n---\\n# {{title}}\\n\\n{{question}}\\n',
-    'Templates/task.md': '---\\ntype: custom-task\\ncustom: task\\n---\\n# {{title}}\\n{{project}}\\n',
+    'Templates/task.md': '---\\ntype: custom-task\\ncustom: task {{projectPath}}\\n---\\n# {{title}}\\n{{project}}\\n',
     'Templates/paper.md': '---\\ntype: custom-paper\\ncustom: "{{source}}"\\n---\\n# {{title}}\\n{{content}}\\n',
     'Templates/idea.md': '# {{title}}\\n\\n{{content}}\\n',
     'Templates/note.md': '# {{title}}\\n\\n{{content}}\\n',
@@ -42,14 +42,27 @@ describe('custom template creation writes', () => {
 
   it('selects the task and Inbox template by type while preserving controlled metadata', async () => {
     const test = appWithTemplates();
-    const taskPath = await createTaskEntry(test.app, { title: 'Task title', project: 'Existing' }, 'Tasks', templates);
+    const taskPath = await createTaskEntry(test.app, { title: 'Task title', project: 'Existing', projectPath: 'Projects/Existing.md' }, 'Tasks', templates);
     expect(test.contents.get(taskPath)).toContain('custom: task');
+    expect(test.contents.get(taskPath)).toContain('Projects/Existing.md');
     expect(test.contents.get(taskPath)).toContain('tags:');
     const inputPath = await createInboxEntry(test.app, { title: 'A paper', kind: 'paper', content: 'Paper body', sourceValue: 'https://example.test', projects: [], problems: [] }, 'Inputs', templates);
     expect(test.contents.get(inputPath)).toContain('custom: https://example.test');
     expect(test.contents.get(inputPath)).toContain('type: inbox');
     const ideaPath = await createInboxEntry(test.app, { title: 'An idea', kind: 'idea', content: 'Idea body', sourceValue: '', projects: [], problems: [] }, 'Inputs', templates);
     expect(test.contents.get(ideaPath)).toContain('# An idea');
+  });
+
+  it('renders association variables and keeps built-in Inbox output as real Markdown', async () => {
+    const test = appWithTemplates();
+    test.contents.set('Templates/paper.md', '---\ntype: inbox\n---\n# {{title}}\nProject {{project}} {{projectPath}}\nProblem {{problem}} {{problemPath}}\n');
+    const custom = await createInboxEntry(test.app, { title: 'Associated', kind: 'paper', content: '', sourceValue: '', projects: ['[[Projects/Existing.md]]'], problems: ['[[Problems/Q.md]]'] }, 'Inputs', templates);
+    expect(test.contents.get(custom)).toContain('Projects/Existing.md');
+    expect(test.contents.get(custom)).toContain('Problems/Q.md');
+    const builtIn = await createInboxEntry(test.app, { title: 'Built-in', kind: 'note', content: 'Body', sourceValue: '', projects: [], problems: [] }, 'Inputs', { ...templates, note: '' });
+    const builtInText = test.contents.get(builtIn)!;
+    expect(builtInText).not.toContain('\\n');
+    expect(builtInText).toContain('type: inbox');
   });
 
   it('uses built-ins when paths are empty and fails before creating files for a missing template', async () => {

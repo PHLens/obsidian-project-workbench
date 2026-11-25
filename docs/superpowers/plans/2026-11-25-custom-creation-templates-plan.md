@@ -86,10 +86,10 @@
 
 ### Task 4: Documentation, full verification, and local handoff
 
-- [ ] Update README with the six settings, variable table, relative-path rules, example template directory, and empty-path fallback. Keep examples generic.
-- [ ] Add generic template fixtures under `test-vault/Templates` only if needed by integration tests; verify they are excluded from data scope and device bundles.
-- [ ] Run `npm run check`, device consistency, privacy scans, and diff checks. Expect type checking/build and the full suite to pass.
-- [ ] Verify release bundles contain no personal paths, template fixture content, or test-only imports.
-- [ ] Run final review against Review Focus, address material findings with failing regressions and a green suite.
-- [ ] Back up and install only `main.js`, `manifest.json`, and `styles.css` into both local device configurations. Preserve data/settings/notes/other plugins and verify full-vault hashes.
-- [ ] Preserve verification evidence, update the ledger, commit final docs/fixtures, and remove only this plan's completed scratch directory.
+- [x] Update README with the six settings, variable table, relative-path rules, example template directory, and empty-path fallback. Keep examples generic.
+- [x] Add generic template fixtures under `test-vault/Templates` only if needed by integration tests; verify they are excluded from data scope and device bundles.
+- [x] Run `npm run check`, device consistency, privacy scans, and diff checks. Expect type checking/build and the full suite to pass.
+- [x] Verify release bundles contain no personal paths, template fixture content, or test-only imports.
+- [x] Run final review against Review Focus, address material findings with failing regressions and a green suite.
+- [x] Back up and install only `main.js`, `manifest.json`, and `styles.css` into both local device configurations. Preserve data/settings/notes/other plugins and verify full-vault hashes.
+- [x] Preserve verification evidence, update the ledger, commit final docs/fixtures, and remove only this plan's completed scratch directory.
