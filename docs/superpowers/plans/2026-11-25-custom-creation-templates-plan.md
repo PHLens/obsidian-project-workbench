@@ -61,12 +61,12 @@
 - `createProjectBundle` renders project and problem templates independently, applies required metadata, and retains rollback behavior.
 - `createProblemForProject`, task creation, and `createInboxEntry` select `problem`, `task`, or `paper`/`idea`/`note` templates respectively.
 
-- [ ] Write `tests/writes/custom-templates.test.ts`: custom project/problem bundle fields and body, custom problem association, task metadata, each Inbox kind, empty-path built-ins, collisions, and template failures before file creation.
-- [ ] Add rollback assertions when the second project template or second file creation fails.
-- [ ] Run the focused write tests and observe failures against hardcoded creation text.
-- [ ] Implement template reads/rendering and controlled frontmatter patches while preserving current paths and rollback.
-- [ ] Run write tests, existing CRUD/Inbox tests, and type checking. Expect all passing.
-- [ ] Commit and record evidence.
+- [x] Write `tests/writes/custom-templates.test.ts`: custom project/problem bundle fields and body, custom problem association, task metadata, each Inbox kind, empty-path built-ins, collisions, and template failures before file creation.
+- [x] Add rollback assertions when the second project template or second file creation fails.
+- [x] Run the focused write tests and observe failures against hardcoded creation text.
+- [x] Implement template reads/rendering and controlled frontmatter patches while preserving current paths and rollback.
+- [x] Run write tests, existing CRUD/Inbox tests, and type checking. Expect all passing.
+- [x] Commit and record evidence.
 
 ### Task 3: Settings UI and view integration
 
