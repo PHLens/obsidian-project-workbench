@@ -59,6 +59,14 @@ The workbench reads Markdown only in the configured directories. Search and pane
 
 Settings are stored by Obsidian in `<config-dir>/plugins/research-workbench/data.json`, where `<config-dir>` is the vault's active configuration directory. The same location applies to separate desktop and mobile configuration directories. Keep this file local to the vault; distribute only `main.js`, `manifest.json`, and `styles.css` when updating the plugin. Updates preserve existing settings.
 
+## Custom creation templates
+
+Under **Settings > Project Workbench > Templates**, configure a Vault-relative Markdown path for projects, problems, tasks, papers, ideas, and notes. Leave a field empty to use the built-in template. Template files are read only when the corresponding record is created; they are not indexed, watched, or included in snapshots.
+
+Supported variables are `{{title}}`, `{{name}}`, `{{goal}}`, `{{question}}`, `{{content}}`, `{{kind}}`, `{{date}}`, `{{project}}`, `{{projectPath}}`, `{{problem}}`, `{{problemPath}}`, `{{source}}`, `{{status}}`, `{{stage}}`, and `{{researchRole}}`. Optional values become empty strings. Unknown variables and invalid YAML frontmatter stop creation before any file is written. Template paths must end in `.md`, stay inside the Vault, and use forward-slash relative paths such as `Templates/paper.md`.
+
+The plugin applies required type, status, association, and Inbox fields after rendering while preserving custom frontmatter fields and body content. Existing notes and local settings are unchanged.
+
 ## Inbox capture and direct editing
 
 The Inbox is available before the first project exists. Use **Add material** in the shared header or **New entry** in the Inbox to capture a paper, idea, or note with a title. Project and problem associations are optional during capture and can be added later. Capture from a project or problem starts with that context selected.
