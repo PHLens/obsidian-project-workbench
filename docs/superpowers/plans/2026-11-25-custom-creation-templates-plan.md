@@ -46,12 +46,12 @@
 - Produce `validateTemplatePath(path: string): void` and `renderTemplate(raw: string, variables: Record<string, string>): string`.
 - Produce `readTemplate(app: App, path: string, variables: Record<string, string>): Promise<string>` with targeted Vault reads and rendered YAML validation.
 
-- [ ] Write `tests/ui/template-renderer.test.ts`: empty/default paths, valid relative paths, absolute/parent/.obsidian rejection, all variables, missing optional variables, unknown/malformed variables, quoted Unicode/newline values, YAML validation, and one targeted read.
-- [ ] Extend settings tests for partial/malformed template maps and preservation of data scope/column settings.
-- [ ] Run the focused tests and observe missing renderer/settings behavior.
-- [ ] Implement the pure renderer and settings normalization without touching creation flows.
-- [ ] Run focused tests and type checking. Expect all passing.
-- [ ] Commit with an English message and record evidence in the ledger.
+- [x] Write `tests/ui/template-renderer.test.ts`: empty/default paths, valid relative paths, absolute/parent/.obsidian rejection, all variables, missing optional variables, unknown/malformed variables, quoted Unicode/newline values, YAML validation, and one targeted read.
+- [x] Extend settings tests for partial/malformed template maps and preservation of data scope/column settings.
+- [x] Run the focused tests and observe missing renderer/settings behavior.
+- [x] Implement the pure renderer and settings normalization without touching creation flows.
+- [x] Run focused tests and type checking. Expect all passing.
+- [x] Commit with an English message and record evidence in the ledger.
 
 ### Task 2: Template-aware creation writes
 
