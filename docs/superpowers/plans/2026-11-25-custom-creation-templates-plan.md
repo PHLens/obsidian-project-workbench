@@ -77,12 +77,12 @@
 - `ResearchWorkbenchView` passes the correct template type to project wizard, problem modal, task modal, and Inbox capture callbacks.
 - Settings saves preserve directory and column settings and do not invalidate snapshots for template-only changes.
 
-- [ ] Write `tests/ui/template-settings.test.ts`: six labels/keys, save round-trip, malformed input normalization, and preservation of existing settings.
-- [ ] Write `tests/ui/template-integration.test.ts`: actual view creation callbacks select the right type, template files are read only on submit, and template paths do not cause background refreshes.
-- [ ] Run the focused integration tests and observe missing settings/view wiring.
-- [ ] Implement settings UI, plugin normalization, view adapters, and error notices.
-- [ ] Run focused tests plus refresh-performance, directory-settings, Inbox, and column tests. Expect all passing.
-- [ ] Commit and record evidence.
+- [x] Write `tests/ui/template-settings.test.ts`: six labels/keys, save round-trip, malformed input normalization, and preservation of existing settings.
+- [x] Write `tests/ui/template-integration.test.ts`: actual view creation callbacks select the right type, template files are read only on submit, and template paths do not cause background refreshes.
+- [x] Run the focused integration tests and observe missing settings/view wiring.
+- [x] Implement settings UI, plugin normalization, view adapters, and error notices.
+- [x] Run focused tests plus refresh-performance, directory-settings, Inbox, and column tests. Expect all passing.
+- [x] Commit and record evidence.
 
 ### Task 4: Documentation, full verification, and local handoff
 

@@ -1,6 +1,7 @@
 import { PluginSettingTab, Setting, App, Plugin } from 'obsidian';
 import type { ResearchWorkbenchSettings } from './settings-model';
 import { DEFAULT_SETTINGS, normalizeDirectoryList } from './settings-model';
+import { normalizeTemplatePaths, type TemplateType } from './template-renderer';
 export { DEFAULT_SETTINGS } from './settings-model';
 import type { WorkbenchDensity } from '../model/view-state';
 export class ResearchWorkbenchSettingTab extends PluginSettingTab {
@@ -12,6 +13,11 @@ export class ResearchWorkbenchSettingTab extends PluginSettingTab {
     new Setting(this.containerEl).setName('强调色').addDropdown((dropdown) => dropdown.addOptions({ theme: '跟随 Obsidian', indigo: '靛紫' }).setValue(plugin.settings.accentMode).onChange(async (value) => { plugin.settings.accentMode = value as ResearchWorkbenchSettings['accentMode']; await plugin.saveSettings(); }));
     new Setting(this.containerEl).setName('标签显示').addDropdown((dropdown) => dropdown.addOptions({ full: '完整', compact: '紧凑', icon: '只显示图标' }).setValue(plugin.settings.tagMode).onChange(async (value) => { plugin.settings.tagMode = value as ResearchWorkbenchSettings['tagMode']; await plugin.saveSettings(); }));
     new Setting(this.containerEl).setName('图标风格').addDropdown((dropdown) => dropdown.addOptions({ linear: '线性', solid: '实心' }).setValue(plugin.settings.iconStyle).onChange(async (value) => { plugin.settings.iconStyle = value as ResearchWorkbenchSettings['iconStyle']; await plugin.saveSettings(); }));
+    new Setting(this.containerEl).setName('Templates').setHeading();
+    const templateSetting = (name: string, key: TemplateType): void => {
+      new Setting(this.containerEl).setName(name).setDesc('Vault 内相对 Markdown 路径；留空使用内置模板。').addText((text) => text.setValue(plugin.settings.templatePaths[key]).onChange(async (value) => { plugin.settings.templatePaths = normalizeTemplatePaths({ ...plugin.settings.templatePaths, [key]: value }); await plugin.saveSettings(); }));
+    };
+    templateSetting('项目模板', 'project'); templateSetting('问题模板', 'problem'); templateSetting('任务模板', 'task'); templateSetting('论文模板', 'paper'); templateSetting('想法模板', 'idea'); templateSetting('笔记模板', 'note');
     new Setting(this.containerEl).setName('Data scope').setHeading();
     const directorySetting = (name: string, description: string, key: keyof Pick<ResearchWorkbenchSettings, 'projectDirectories' | 'problemDirectories' | 'taskDirectories' | 'inputDirectories' | 'recordDirectories'>): void => {
       new Setting(this.containerEl).setName(name).setDesc(description).addText((text) => text.setValue(plugin.settings[key].join(', ')).onChange(async (value) => { const directories = normalizeDirectoryList(value); plugin.settings[key] = directories; await plugin.saveSettings(); }));

@@ -3,14 +3,15 @@ import { ResearchWorkbenchView, VIEW_TYPE_RESEARCH_WORKBENCH } from './ui/workbe
 import { DEFAULT_SETTINGS, ResearchWorkbenchSettingTab } from './ui/settings';
 import type { ResearchWorkbenchSettings } from './ui/settings-model';
 import { normalizeColumnPreferences, type ColumnPreferences } from './ui/column-layout';
+import { normalizeTemplatePaths } from './ui/template-renderer';
 
 export default class ResearchWorkbenchPlugin extends Plugin {
   settings: ResearchWorkbenchSettings = { ...DEFAULT_SETTINGS };
   private settingsWrite: Promise<void> = Promise.resolve();
   async onload(): Promise<void> {
     const loaded = await this.loadData() ?? {};
-    this.settings = { ...DEFAULT_SETTINGS, ...loaded, columnLayout: normalizeColumnPreferences(loaded.columnLayout) };
-    this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf, this.settings, { preferences: this.settings.columnLayout, save: value => this.saveColumnPreferences(value) }));
+    this.settings = { ...DEFAULT_SETTINGS, ...loaded, columnLayout: normalizeColumnPreferences(loaded.columnLayout), templatePaths: normalizeTemplatePaths(loaded.templatePaths) };
+    this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf, this.settings, { preferences: this.settings.columnLayout, templatePaths: this.settings.templatePaths, save: value => this.saveColumnPreferences(value) }));
     this.addSettingTab(new ResearchWorkbenchSettingTab(this.app, this));
     this.addCommand({ id: 'open-workbench', name: 'Open workbench', callback: () => void this.activate() });
     this.addCommand({ id: 'create-project', name: 'Create project', callback: () => void this.withView((view) => view.openProjectWizard()) });
@@ -27,7 +28,7 @@ export default class ResearchWorkbenchPlugin extends Plugin {
   }
   async saveSettings(): Promise<void> {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)) if (leaf.view instanceof ResearchWorkbenchView) {
-      leaf.view.setDataScope(this.settings); leaf.view.setColumnPreferences(this.settings.columnLayout);
+      leaf.view.setDataScope(this.settings); leaf.view.setColumnPreferences(this.settings.columnLayout); leaf.view.setTemplatePaths(this.settings.templatePaths);
     }
     await this.writeSettings();
   }
