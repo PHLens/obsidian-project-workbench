@@ -67,6 +67,8 @@ Supported variables are `{{title}}`, `{{name}}`, `{{goal}}`, `{{question}}`, `{{
 
 The plugin applies required type, status, association, and Inbox fields after rendering while preserving custom frontmatter fields and body content. Existing notes and local settings are unchanged.
 
+When Templater is installed, templates containing `<% ... %>` are executed through Templater at creation time. Templates using only `{{...}}` variables use the built-in renderer. Templater templates require the Templater plugin to be enabled on the active device; if its runtime is unavailable or fails, creation stops and removes any partial file. Templater's internal runtime adapter follows the installed plugin version and may require maintenance after a Templater upgrade.
+
 ## Inbox capture and direct editing
 
 The Inbox is available before the first project exists. Use **Add material** in the shared header or **New entry** in the Inbox to capture a paper, idea, or note with a title. Project and problem associations are optional during capture and can be added later. Capture from a project or problem starts with that context selected.

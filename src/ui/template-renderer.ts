@@ -5,6 +5,7 @@ export type TemplateType = 'project' | 'problem' | 'task' | 'paper' | 'idea' | '
 export type TemplatePaths = Record<TemplateType, string>;
 export const DEFAULT_TEMPLATE_PATHS: TemplatePaths = { project: '', problem: '', task: '', paper: '', idea: '', note: '' };
 export function localDate(date = new Date()): string { const pad = (value: number) => String(value).padStart(2, '0'); return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()); }
+export function templateUsesTemplater(raw: string): boolean { return /<%[\s\S]*?%>/.test(raw); }
 
 export function normalizeTemplatePaths(value: unknown): TemplatePaths {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
@@ -55,4 +56,24 @@ export async function readTemplate(app: App, path: string, variables: Record<str
   const rendered = renderTemplate(await app.vault.read(file), variables);
   frontmatterIsValid(rendered);
   return rendered;
+}
+
+export async function createConfiguredNote(app: App, templatePath: string, directory: string, filename: string, variables: Record<string, string>, fallback: string): Promise<{ path: string; content: string; usedTemplater: boolean }> {
+  validateTemplatePath(templatePath);
+  const templateFile = app.vault.getFileByPath(templatePath) as TFile | null;
+  if (!templateFile || templateFile.extension !== 'md') throw new Error('找不到模板文件：' + templatePath);
+  const raw = await app.vault.read(templateFile);
+  if (!templateUsesTemplater(raw)) {
+    const content = renderTemplate(raw, variables);
+    frontmatterIsValid(content);
+    return { path: directory + '/' + filename + '.md', content, usedTemplater: false };
+  }
+  const runtime = (app as any).plugins?.getPlugin?.('templater-obsidian')?.templater;
+  if (!runtime || typeof runtime.create_new_note_from_template !== 'function') throw new Error('当前模板需要 Templater，但未找到可用的 Templater 运行时。');
+  const created = await runtime.create_new_note_from_template(templateFile, directory, filename, false);
+  if (!created || created.path !== directory + '/' + filename + '.md') {
+    if (created && typeof app.vault.delete === 'function') await app.vault.delete(created);
+    throw new Error('Templater 未按预期创建目标文件，请检查模板和目录设置。');
+  }
+  return { path: created.path, content: await app.vault.read(created), usedTemplater: true };
 }

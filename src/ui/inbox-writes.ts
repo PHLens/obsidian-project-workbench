@@ -2,7 +2,7 @@ import type { App } from 'obsidian';
 import { stringify } from 'yaml';
 import type { InputKind, InboxStatus } from '../model/inbox';
 import { applyFrontmatterPatch, validateMarkdownPath, writeFrontmatterWithExpectedHash, type WriteResult } from './vault-writes';
-import { localDate, readTemplate, type TemplatePaths } from './template-renderer';
+import { createConfiguredNote, localDate, readTemplate, type TemplatePaths } from './template-renderer';
 export interface InboxAssociations { projects: string[]; problems: string[]; }
 export interface InboxCaptureInput extends InboxAssociations { title: string; kind: InputKind; content: string; sourceValue: string; }
 export function associationLinks(values: string[]): string[] {
@@ -26,8 +26,14 @@ export async function createInboxEntry(app: App, input: InboxCaptureInput, direc
   const template = templatePaths[input.kind];
   const linkContext = (values: string[]) => { const value = values.find((item) => item.trim()); const path = value?.replace(/^\[\[/, '').replace(/\]\]$/, '') ?? ''; return { path, title: path.split('/').pop()?.replace(/\.md$/, '') ?? '' }; };
   const projectRef = linkContext(input.projects), problemRef = linkContext(input.problems);
-  const rendered = template ? await readTemplate(app, template, { title, name: title, content: input.content.trim(), kind: input.kind, source: input.sourceValue.trim(), project: projectRef.title, projectPath: projectRef.path, problem: problemRef.title, problemPath: problemRef.path, goal: '', question: '', status: 'pending', stage: '', researchRole: '', date: localDate() }) : builtIn;
-  await app.vault.create(path, applyFrontmatterPatch(rendered, fields));
+  if (template) {
+    const rendered = await createConfiguredNote(app, template, directory, basename, { title, name: title, content: input.content.trim(), kind: input.kind, source: input.sourceValue.trim(), project: projectRef.title, projectPath: projectRef.path, problem: problemRef.title, problemPath: problemRef.path, goal: '', question: '', status: 'pending', stage: '', researchRole: '', date: localDate() }, builtIn);
+    const next = applyFrontmatterPatch(rendered.content, fields);
+    if (rendered.usedTemplater) {
+      const file = app.vault.getFileByPath(rendered.path); if (!file) throw new Error('无法取得模板创建的 Inbox 文件。');
+      await app.vault.modify(file, next);
+    } else await app.vault.create(rendered.path, next);
+  } else await app.vault.create(path, applyFrontmatterPatch(builtIn, fields));
   return path;
 }
 export function updateInboxAssociations(app: App, path: string, expectedHash: string, links: InboxAssociations): Promise<WriteResult> {

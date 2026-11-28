@@ -74,6 +74,15 @@ describe('custom template creation writes', () => {
     expect([...test.contents.keys()]).toEqual(before);
   });
 
+  it('uses the installed Templater runtime for executable templates', async () => {
+    const test = appWithTemplates();
+    test.contents.set('Templates/task.md', '<% tp.file.title %>');
+    (test.app as any).plugins = { getPlugin: () => ({ templater: { create_new_note_from_template: async (_template: any, directory: string, filename: string) => test.app.vault.create(`${directory}/${filename}.md`, `# ${filename}`) } }) };
+    const path = await createTaskEntry(test.app, { title: 'Templater task', project: 'Existing', projectPath: 'Projects/Existing.md' }, 'Tasks', { ...templates, task: 'Templates/task.md' });
+    expect(test.contents.get(path)).toContain('status: open');
+    expect(test.contents.get(path)).toContain('# Templater task');
+  });
+
   it('rolls back a project bundle when its second template cannot be read', async () => {
     const test = appWithTemplates();
     const before = [...test.contents.keys()];

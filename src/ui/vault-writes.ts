@@ -1,6 +1,6 @@
 import { parse, stringify } from 'yaml';
 import type { App, TFile } from 'obsidian';
-import { localDate, readTemplate, type TemplatePaths } from './template-renderer';
+import { createConfiguredNote, localDate, readTemplate, type TemplatePaths } from './template-renderer';
 
 export interface ProjectBundleInput { name: string; goal: string; firstProblem: string; }
 export interface WriteResult { path: string; changed: boolean; oldHash: string; newHash: string; }
@@ -25,6 +25,17 @@ async function renderOrBuiltIn(app: App, type: keyof TemplatePaths, variables: R
   return template ? readTemplate(app, template, variables) : builtIn;
 }
 function basename(path: string): string { return path.split('/').pop()?.replace(/\.md$/, '') ?? path; }
+interface PreparedNote { path: string; content: string; createdByTemplater: boolean; }
+async function prepareNote(app: App, templatePath: string | undefined, directory: string, filename: string, variables: Record<string, string>, builtIn: string, patch: Record<string, unknown>): Promise<PreparedNote> {
+  if (!templatePath) return { path: directory + '/' + filename + '.md', content: applyFrontmatterPatch(builtIn, patch), createdByTemplater: false };
+  const rendered = await createConfiguredNote(app, templatePath, directory, filename, variables, builtIn);
+  const content = applyFrontmatterPatch(rendered.content, patch);
+  if (rendered.usedTemplater) {
+    const file = app.vault.getFileByPath(rendered.path); if (!file) throw new Error('Templater 创建的文件无法读取：' + rendered.path);
+    await app.vault.modify(file, content); return { path: rendered.path, content, createdByTemplater: true };
+  }
+  return { path: rendered.path, content, createdByTemplater: false };
+}
 export function updateTaskText(raw: string, patch: { status?: string; priority?: string; due?: string }): string { return applyFrontmatterPatch(raw, patch); }
 export function transitionPending(raw: string, status: 'pending' | 'processed'): string { return applyFrontmatterPatch(raw, { pending: status === 'pending', processing_status: status }); }
 export function archiveMarkdown(raw: string): string { return applyFrontmatterPatch(raw, { archived: true }); }
@@ -47,13 +58,17 @@ export async function createProjectBundle(app: App, input: ProjectBundleInput, d
   if (app.vault.getAbstractFileByPath(text.projectPath) || app.vault.getAbstractFileByPath(text.problemPath)) throw new Error('Project or first problem already exists.');
   const projectName = input.name.trim(), problemTitle = input.firstProblem.trim();
   const variables = { title: projectName, name: projectName, goal: input.goal.trim(), question: problemTitle, project: projectName, projectPath: text.projectPath, problem: problemTitle, problemPath: text.problemPath, status: 'proposed', stage: 'inbox', researchRole: 'mainline', date: localDate(), content: '' };
-  const projectTemplate = await renderOrBuiltIn(app, 'project', variables, text.project, templatePaths);
-  const problemTemplate = await renderOrBuiltIn(app, 'problem', variables, text.problem, templatePaths);
-  const projectText = applyFrontmatterPatch(projectTemplate, { type: 'project', title: projectName, status: 'proposed', current_gate: input.goal.trim(), problems: ['[[' + basename(text.problemPath) + ']]'], focus_problems: ['[[' + basename(text.problemPath) + ']]'] });
-  const problemText = applyFrontmatterPatch(problemTemplate, { type: 'problem', project: '[[' + basename(text.projectPath) + ']]', up: '[[' + basename(text.projectPath) + ']]', status: 'exploring', stage: 'inbox', research_role: 'mainline' });
-  await app.vault.create(text.problemPath, problemText);
-  try { await app.vault.create(text.projectPath, projectText); } catch (error) {
-    const created = app.vault.getAbstractFileByPath(text.problemPath);
+  let problemPrepared: PreparedNote | undefined; let projectPrepared: PreparedNote | undefined;
+  try {
+    problemPrepared = await prepareNote(app, templatePaths.problem, directories.problemDirectories?.[0] ?? 'Problems', basename(text.problemPath), variables, text.problem, { type: 'problem', project: '[[' + basename(text.projectPath) + ']]', up: '[[' + basename(text.projectPath) + ']]', status: 'exploring', stage: 'inbox', research_role: 'mainline' });
+    projectPrepared = await prepareNote(app, templatePaths.project, directories.projectDirectories?.[0] ?? 'Projects', basename(text.projectPath), variables, text.project, { type: 'project', title: projectName, status: 'proposed', current_gate: input.goal.trim(), problems: ['[[' + basename(text.problemPath) + ']]'], focus_problems: ['[[' + basename(text.problemPath) + ']]'] });
+  } catch (error) {
+    for (const prepared of [problemPrepared, projectPrepared]) { const file = prepared?.createdByTemplater ? app.vault.getAbstractFileByPath(prepared.path) : null; if (file && 'extension' in file) await app.fileManager.trashFile(file); }
+    throw error;
+  }
+  if (!problemPrepared.createdByTemplater) await app.vault.create(problemPrepared.path, problemPrepared.content);
+  try { if (!projectPrepared.createdByTemplater) await app.vault.create(projectPrepared.path, projectPrepared.content); } catch (error) {
+    const created = app.vault.getAbstractFileByPath(problemPrepared.path);
     if (created && 'extension' in created) await app.fileManager.trashFile(created);
     throw new Error('Project creation failed and the first problem was rolled back: ' + String(error));
   }
@@ -63,8 +78,9 @@ export async function createProblemForProject(app: App, projectPath: string, inp
   const safe = input.title.trim(); const problemPath = (directories.problemDirectories?.[0] ?? 'Problems') + '/' + safe + '.md'; validateMarkdownPath(problemPath); if (app.vault.getAbstractFileByPath(problemPath)) throw new Error('Problem file already exists.');
   const project = await readTFile(app, projectPath); const projectRaw = await app.vault.read(project); const projectTitle = project.basename;
   const builtIn = '---\ntype: problem\ntags: [research, problem]\nproject: "[[' + projectTitle + ']]"\nstatus: ' + input.status + '\nstage: ' + input.stage + '\nresearch_role: ' + input.researchRole + '\n---\n# ' + safe + '\n\n## Overview\n\n' + input.question + '\n\n## Next Step\n\n';
-  const content = await renderOrBuiltIn(app, 'problem', { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: localDate(), goal: '', content: '' }, builtIn, templatePaths);
-  const created = await app.vault.create(problemPath, applyFrontmatterPatch(content, { type: 'problem', project: '[[' + projectTitle + ']]', status: input.status, stage: input.stage, research_role: input.researchRole }));
+  const prepared = await prepareNote(app, templatePaths.problem, directories.problemDirectories?.[0] ?? 'Problems', safe, { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: localDate(), goal: '', content: '' }, builtIn, { type: 'problem', project: '[[' + projectTitle + ']]', status: input.status, stage: input.stage, research_role: input.researchRole });
+  const created = prepared.createdByTemplater ? app.vault.getFileByPath(problemPath) : await app.vault.create(problemPath, prepared.content);
+  if (!created) throw new Error('无法取得新建的问题文件。');
   try {
     const links = (frontmatter: Record<string, unknown>) => { const current = Array.isArray(frontmatter.problems) ? frontmatter.problems.filter((value): value is string => typeof value === 'string') : []; const link = '[[' + safe + ']]'; frontmatter.problems = [...new Set([...current, link])]; if (input.focus) { const focus = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value): value is string => typeof value === 'string') : []; frontmatter.focus_problems = [...new Set([...focus, link])]; } };
     await writeFrontmatterWithExpectedHash(app, projectPath, sha256(projectRaw), links);
@@ -74,8 +90,8 @@ export async function createProblemForProject(app: App, projectPath: string, inp
 export async function createTaskEntry(app: App, input: { title: string; project: string; projectPath?: string }, directory: string, templatePaths: CreationTemplatePaths = {}): Promise<string> {
   const title = input.title.trim(); const path = directory + '/' + title + '.md'; validateMarkdownPath(path); if (app.vault.getAbstractFileByPath(path)) throw new Error('Task file already exists.');
   const builtIn = '---\nstatus: open\ntags: [task]\nprojects: ["[[' + input.project + ']]"]\n---\n# ' + title + '\n';
-  const rendered = await renderOrBuiltIn(app, 'task', { title, name: title, project: input.project, projectPath: input.projectPath ?? '', problem: '', problemPath: '', goal: '', question: '', content: '', kind: 'task', source: '', status: 'open', stage: '', researchRole: '', date: localDate() }, builtIn, templatePaths);
-  await app.vault.create(path, applyFrontmatterPatch(rendered, { status: 'open', tags: ['task'], projects: ['[[' + input.project + ']]'] }));
+  const prepared = await prepareNote(app, templatePaths.task, directory, title, { title, name: title, project: input.project, projectPath: input.projectPath ?? '', problem: '', problemPath: '', goal: '', question: '', content: '', kind: 'task', source: '', status: 'open', stage: '', researchRole: '', date: localDate() }, builtIn, { status: 'open', tags: ['task'], projects: ['[[' + input.project + ']]'] });
+  if (!prepared.createdByTemplater) await app.vault.create(prepared.path, prepared.content);
   return path;
 }
 export async function updateProblem(app: App, path: string, input: Record<string, unknown>, expectedHash: string): Promise<WriteResult> { return writeFrontmatterWithExpectedHash(app, path, expectedHash, (frontmatter) => Object.assign(frontmatter, input)); }
