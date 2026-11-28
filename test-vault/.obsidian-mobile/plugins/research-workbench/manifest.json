@@ -1,7 +1,7 @@
 {
   "id": "research-workbench",
   "name": "Project Workbench",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "minAppVersion": "1.13.0",
   "description": "Plan projects, track problems, and review progress from Markdown notes.",
   "author": "Research",

@@ -1,13 +1,14 @@
 import type { App } from 'obsidian';
 import { stringify } from 'yaml';
 import type { InputKind, InboxStatus } from '../model/inbox';
-import { validateMarkdownPath, writeFrontmatterWithExpectedHash, type WriteResult } from './vault-writes';
+import { applyFrontmatterPatch, validateMarkdownPath, writeFrontmatterWithExpectedHash, type WriteResult } from './vault-writes';
+import { createConfiguredNote, localDate, readTemplate, type TemplatePaths } from './template-renderer';
 export interface InboxAssociations { projects: string[]; problems: string[]; }
 export interface InboxCaptureInput extends InboxAssociations { title: string; kind: InputKind; content: string; sourceValue: string; }
 export function associationLinks(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean).map((value) => value.startsWith('[[') && value.endsWith(']]') ? value : `[[${value}]]`))];
 }
-export async function createInboxEntry(app: App, input: InboxCaptureInput, directory: string): Promise<string> {
+export async function createInboxEntry(app: App, input: InboxCaptureInput, directory: string, templatePaths: Partial<TemplatePaths> = {}): Promise<string> {
   if (!directory?.trim()) throw new Error('请先配置待讨论输入目录。');
   validateMarkdownPath(`${directory}/entry.md`);
   const folder = app.vault.getAbstractFileByPath(directory);
@@ -21,7 +22,18 @@ export async function createInboxEntry(app: App, input: InboxCaptureInput, direc
   for (let suffix = 2; app.vault.getAbstractFileByPath(path); suffix++) path = `${directory}/${basename} (${suffix}).md`;
   validateMarkdownPath(path);
   const fields = { type: 'inbox', title, input_kind: input.kind, pending: true, processing_status: 'pending', projects: associationLinks(input.projects), problems: associationLinks(input.problems), source: input.sourceValue.trim() };
-  await app.vault.create(path, `---\n${stringify(fields).trim()}\n---\n# ${title}\n\n${input.content.trim()}\n`);
+  const builtIn = ['---', stringify(fields).trim(), '---', '# ' + title, '', input.content.trim(), ''].join(String.fromCharCode(10));
+  const template = templatePaths[input.kind];
+  const linkContext = (values: string[]) => { const value = values.find((item) => item.trim()); const path = value?.replace(/^\[\[/, '').replace(/\]\]$/, '') ?? ''; return { path, title: path.split('/').pop()?.replace(/\.md$/, '') ?? '' }; };
+  const projectRef = linkContext(input.projects), problemRef = linkContext(input.problems);
+  if (template) {
+    const rendered = await createConfiguredNote(app, template, directory, basename, { title, name: title, content: input.content.trim(), kind: input.kind, source: input.sourceValue.trim(), project: projectRef.title, projectPath: projectRef.path, problem: problemRef.title, problemPath: problemRef.path, goal: '', question: '', status: 'pending', stage: '', researchRole: '', date: localDate() }, builtIn);
+    const next = applyFrontmatterPatch(rendered.content, fields);
+    if (rendered.usedTemplater) {
+      const file = app.vault.getFileByPath(rendered.path); if (!file) throw new Error('无法取得模板创建的 Inbox 文件。');
+      await app.vault.modify(file, next);
+    } else await app.vault.create(rendered.path, next);
+  } else await app.vault.create(path, applyFrontmatterPatch(builtIn, fields));
   return path;
 }
 export function updateInboxAssociations(app: App, path: string, expectedHash: string, links: InboxAssociations): Promise<WriteResult> {

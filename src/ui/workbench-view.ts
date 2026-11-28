@@ -9,7 +9,7 @@ import { renderWorkbench, type WorkbenchActions } from './components/workbench-s
 import { ProjectWizard, type ProjectWizardResult } from './modals/project-wizard';
 import { TaskModal } from './modals/task-modal';
 import { ProblemModal } from './modals/problem-modal';
-import { createProjectBundle, createProblemForProject, archiveEntity, updateTask, writeFrontmatterWithExpectedHash, linkExistingProblemToProject, sha256 } from './vault-writes';
+import { createProjectBundle, createProblemForProject, createTaskEntry, archiveEntity, updateTask, writeFrontmatterWithExpectedHash, linkExistingProblemToProject, sha256 } from './vault-writes';
 import { EditProblemModal } from './modals/edit-problem-modal';
 import { AssociateProblemModal } from './modals/associate-problem-modal';
 import { EditGoalsModal } from './modals/edit-goals-modal';
@@ -25,13 +25,15 @@ import { getUnassociatedProblemCandidates } from './problem-candidates';
 import { allDataDirectories, isPathInDirectories, resolveDataScope, type WorkbenchDataScope } from '../model/data-scope';
 import { attachColumnLayout, normalizeColumnPreferences, type ColumnLayoutController, type ColumnPreferences } from './column-layout';
 import { readNextSteps } from '../model/next-steps';
+import { normalizeTemplatePaths, type TemplatePaths } from './template-renderer';
 
-interface ColumnStorage { preferences?: Partial<ColumnPreferences>; save?: (value: ColumnPreferences) => void | Promise<void>; }
+interface ColumnStorage { preferences?: Partial<ColumnPreferences>; templatePaths?: Partial<TemplatePaths>; save?: (value: ColumnPreferences) => void | Promise<void>; }
 
 export const VIEW_TYPE_RESEARCH_WORKBENCH = 'research-workbench';
 export class ResearchWorkbenchView extends ItemView {
   private dataScope: WorkbenchDataScope;
   private columnPreferences: ColumnPreferences;
+  private templatePaths: TemplatePaths;
   private columnController?: ColumnLayoutController;
   private columnRoot?: HTMLElement;
   private snapshot: ProjectSnapshot | null = null;
@@ -55,7 +57,7 @@ export class ResearchWorkbenchView extends ItemView {
   private projectPath = '';
   private state: WorkbenchViewState = { ...DEFAULT_WORKBENCH_STATE, projectPath: this.projectPath };
   constructor(leaf: WorkspaceLeaf, dataScope: Partial<WorkbenchDataScope> = {}, private readonly columnStorage: ColumnStorage = {}) {
-    super(leaf); this.workbenchLeaf = leaf; this.dataScope = resolveDataScope(dataScope); this.columnPreferences = normalizeColumnPreferences(columnStorage.preferences);
+    super(leaf); this.workbenchLeaf = leaf; this.dataScope = resolveDataScope(dataScope); this.columnPreferences = normalizeColumnPreferences(columnStorage.preferences); this.templatePaths = normalizeTemplatePaths(columnStorage.templatePaths);
   }
   getViewType(): string { return VIEW_TYPE_RESEARCH_WORKBENCH; }
   getDisplayText(): string { return 'Project Workbench'; }
@@ -66,6 +68,7 @@ export class ResearchWorkbenchView extends ItemView {
     this.refreshScheduler = createRefreshScheduler(() => { if (this.dirtyPaths.size && this.isViewVisible()) void this.refresh(); });
     const changed = (path: string) => {
       if (this.disposed) return;
+      if (this.isTemplatePath(path)) return;
       const directories = allDataDirectories(this.dataScope);
       if (isPathInDirectories(path, directories) || directories.some((directory) => directory.startsWith(`${path}/`))) {
         this.dirtyPaths.add(path); this.refreshScheduler?.request();
@@ -112,6 +115,8 @@ export class ResearchWorkbenchView extends ItemView {
     this.columnPreferences = normalizeColumnPreferences(value);
     this.columnController?.update(this.columnPreferences);
   }
+  setTemplatePaths(value: Partial<TemplatePaths>): void { this.templatePaths = normalizeTemplatePaths(value); }
+  private isTemplatePath(path: string): boolean { return Object.values(this.templatePaths).some((templatePath) => templatePath === path); }
   private requireDirectory(key: keyof WorkbenchDataScope): string {
     const directory = this.dataScope[key][0];
     const labels: Record<keyof WorkbenchDataScope, string> = { projectDirectories: '项目', problemDirectories: '问题', taskDirectories: '任务', inputDirectories: '待讨论输入', recordDirectories: '进展记录' };
@@ -120,7 +125,7 @@ export class ResearchWorkbenchView extends ItemView {
   }
   private async files(generation = this.lifecycleVersion): Promise<VaultFile[]> {
     const directories = allDataDirectories(this.dataScope);
-    const files = this.app.vault.getMarkdownFiles().filter((file) => isPathInDirectories(file.path, directories));
+    const files = this.app.vault.getMarkdownFiles().filter((file) => !this.isTemplatePath(file.path) && isPathInDirectories(file.path, directories));
     const forced = new Set(this.dirtyPaths); this.dirtyPaths.clear();
     return this.fileCache.load(files, (file) => this.app.vault.read(file), forced, () => !this.disposed && generation === this.lifecycleVersion);
   }
@@ -229,7 +234,7 @@ export class ResearchWorkbenchView extends ItemView {
   private async openCapture(mode: 'new' | 'reference', context: CaptureContext = {}): Promise<void> {
     let directory: string; try { directory = this.requireDirectory('inputDirectories'); } catch (error) { new Notice(String(error)); return; }
     new InboxCaptureModal(this.app, { mode, kind: mode === 'new' ? 'idea' : 'note', context, candidates: this.candidates(), submit: async (input) => {
-      const path = await createInboxEntry(this.app, input, directory); await this.refreshAffected(path);
+      const path = await createInboxEntry(this.app, input, directory, this.templatePaths); await this.refreshAffected(path);
     } }).open();
   }
   private async editInlineProperty(path: string, entity: EntityKind, field: EditableProperty, anchor: HTMLElement): Promise<void> {
@@ -310,12 +315,12 @@ export class ResearchWorkbenchView extends ItemView {
   async openProjectWizard(): Promise<void> {
     try { this.requireDirectory('projectDirectories'); this.requireDirectory('problemDirectories'); } catch (error) { new Notice(String(error)); return; }
     new ProjectWizard(this.app, async (result: ProjectWizardResult) => {
-      const created = await createProjectBundle(this.app, result, this.dataScope);
+      const created = await createProjectBundle(this.app, result, this.dataScope, this.templatePaths);
       this.projectPath = created.projectPath; this.state.projectPath = created.projectPath; await this.refresh(); await this.openFile(created.problemPath);
     }).open();
   }
-  async createProblem(): Promise<void> { try { this.requireDirectory('problemDirectories'); } catch (error) { new Notice(String(error)); return; } new ProblemModal(this.app, async (result) => { if (!this.snapshot) return; const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: 'inbox', stage: 'inbox', researchRole: 'mainline', focus: false }, this.dataScope); await this.refresh(); await this.openFile(path); }).open(); }
-  async createTask(): Promise<void> { let directory: string; try { directory = this.requireDirectory('taskDirectories'); } catch (error) { new Notice(String(error)); return; } new TaskModal(this.app, async (title) => { const path = `${directory}/${title.trim()}.md`; await this.app.vault.create(path, `---\nstatus: open\ntags: [task]\nprojects: ["[[${this.snapshot?.project.title ?? 'Project'}]]"]\n---\n# ${title.trim()}\n`); await this.refresh(); }).open(); }
+  async createProblem(): Promise<void> { try { this.requireDirectory('problemDirectories'); } catch (error) { new Notice(String(error)); return; } new ProblemModal(this.app, async (result) => { if (!this.snapshot) return; const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: 'inbox', stage: 'inbox', researchRole: 'mainline', focus: false }, this.dataScope, this.templatePaths); await this.refresh(); await this.openFile(path); }).open(); }
+  async createTask(): Promise<void> { let directory: string; try { directory = this.requireDirectory('taskDirectories'); } catch (error) { new Notice(String(error)); return; } new TaskModal(this.app, async (title) => { await createTaskEntry(this.app, { title, project: this.snapshot?.project.title ?? 'Project', projectPath: this.projectPath }, directory, this.templatePaths); await this.refresh(); }).open(); }
   async openGlobalInbox(): Promise<void> { this.state.panel = 'inbox'; this.state.inboxAssociation = null; this.state.inboxView = 'pending'; this.state.inboxKind = 'all'; this.state.query = ''; this.renderCurrent(); }
   async captureExistingNote(): Promise<void> { await this.openCapture('reference', {}); }
   async createPending(): Promise<void> { await this.openCapture('new', {}); }

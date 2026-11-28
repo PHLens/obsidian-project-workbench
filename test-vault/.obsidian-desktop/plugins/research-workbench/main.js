@@ -7402,6 +7402,77 @@ var ProblemModal = class extends import_obsidian3.Modal {
   }
 };
 
+// src/ui/template-renderer.ts
+var DEFAULT_TEMPLATE_PATHS = { project: "", problem: "", task: "", paper: "", idea: "", note: "" };
+function localDate(date = /* @__PURE__ */ new Date()) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+}
+function templateUsesTemplater(raw) {
+  return /<%[\s\S]*?%>/.test(raw);
+}
+function normalizeTemplatePaths(value) {
+  const source2 = value && typeof value === "object" ? value : {};
+  const result = { ...DEFAULT_TEMPLATE_PATHS };
+  for (const key of Object.keys(result)) {
+    const candidate = source2[key];
+    if (typeof candidate !== "string" || !candidate.trim()) continue;
+    try {
+      validateTemplatePath(candidate.trim());
+      result[key] = candidate.trim();
+    } catch {
+    }
+  }
+  return result;
+}
+function validateTemplatePath(path) {
+  const normalized = path.trim();
+  if (!normalized || normalized.startsWith("/") || !normalized.endsWith(".md") || normalized.split("/").some((part) => !part || part === ".." || part === "." || part.startsWith(".obsidian"))) {
+    throw new Error("\u6A21\u677F\u8DEF\u5F84\u5FC5\u987B\u662F Vault \u5185\u7684\u76F8\u5BF9 Markdown \u8DEF\u5F84\uFF1A" + path);
+  }
+}
+function frontmatterIsValid(raw) {
+  const match = raw.match(/^---\s*\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (!match) return;
+  try {
+    const value = parse(match[1]);
+    if (value !== null && (typeof value !== "object" || Array.isArray(value))) throw new Error("frontmatter must be a YAML object");
+  } catch (error) {
+    throw new Error("\u6A21\u677F frontmatter YAML \u65E0\u6548\uFF1A" + String(error));
+  }
+}
+function renderTemplate(raw, variables) {
+  const allowed = new Set(Object.keys(variables));
+  const known = /{{([A-Za-z][A-Za-z0-9]*)}}/g;
+  const remainder = raw.replace(known, "");
+  if (remainder.includes("{{") || remainder.includes("}}") || /{{(?![A-Za-z][A-Za-z0-9]*}})/.test(raw)) {
+    throw new Error("\u6A21\u677F\u53D8\u91CF\u683C\u5F0F\u65E0\u6548\uFF0C\u8BF7\u4F7F\u7528 {{variable}}\u3002");
+  }
+  return raw.replace(/{{([A-Za-z][A-Za-z0-9]*)}}/g, (_match, name) => {
+    if (!allowed.has(name)) throw new Error("\u6A21\u677F\u5305\u542B\u672A\u77E5\u53D8\u91CF\uFF1A{{" + name + "}}");
+    return variables[name] ?? "";
+  });
+}
+async function createConfiguredNote(app, templatePath, directory, filename, variables, fallback) {
+  validateTemplatePath(templatePath);
+  const templateFile = app.vault.getFileByPath(templatePath);
+  if (!templateFile || templateFile.extension !== "md") throw new Error("\u627E\u4E0D\u5230\u6A21\u677F\u6587\u4EF6\uFF1A" + templatePath);
+  const raw = await app.vault.read(templateFile);
+  if (!templateUsesTemplater(raw)) {
+    const content = renderTemplate(raw, variables);
+    frontmatterIsValid(content);
+    return { path: directory + "/" + filename + ".md", content, usedTemplater: false };
+  }
+  const runtime = app.plugins?.getPlugin?.("templater-obsidian")?.templater;
+  if (!runtime || typeof runtime.create_new_note_from_template !== "function") throw new Error("\u5F53\u524D\u6A21\u677F\u9700\u8981 Templater\uFF0C\u4F46\u672A\u627E\u5230\u53EF\u7528\u7684 Templater \u8FD0\u884C\u65F6\u3002");
+  const created = await runtime.create_new_note_from_template(templateFile, directory, filename, false);
+  if (!created || created.path !== directory + "/" + filename + ".md") {
+    if (created && typeof app.vault.delete === "function") await app.vault.delete(created);
+    throw new Error("Templater \u672A\u6309\u9884\u671F\u521B\u5EFA\u76EE\u6807\u6587\u4EF6\uFF0C\u8BF7\u68C0\u67E5\u6A21\u677F\u548C\u76EE\u5F55\u8BBE\u7F6E\u3002");
+  }
+  return { path: created.path, content: await app.vault.read(created), usedTemplater: true };
+}
+
 // src/ui/vault-writes.ts
 function sha256(text) {
   let hash = 2166136261;
@@ -7477,6 +7548,25 @@ ${stringify3(frontmatter).trim()}
 ${body.startsWith("\n") ? body : `
 ${body}`}`;
 }
+function applyFrontmatterPatch(raw, patch) {
+  const parsed = splitFrontmatter(raw);
+  return withFrontmatter(raw, { ...parsed.frontmatter, ...patch }, parsed.body);
+}
+function basename(path) {
+  return path.split("/").pop()?.replace(/\.md$/, "") ?? path;
+}
+async function prepareNote(app, templatePath, directory, filename, variables, builtIn, patch) {
+  if (!templatePath) return { path: directory + "/" + filename + ".md", content: applyFrontmatterPatch(builtIn, patch), createdByTemplater: false };
+  const rendered = await createConfiguredNote(app, templatePath, directory, filename, variables, builtIn);
+  const content = applyFrontmatterPatch(rendered.content, patch);
+  if (rendered.usedTemplater) {
+    const file = app.vault.getFileByPath(rendered.path);
+    if (!file) throw new Error("Templater \u521B\u5EFA\u7684\u6587\u4EF6\u65E0\u6CD5\u8BFB\u53D6\uFF1A" + rendered.path);
+    await app.vault.modify(file, content);
+    return { path: rendered.path, content, createdByTemplater: true };
+  }
+  return { path: rendered.path, content, createdByTemplater: false };
+}
 async function readTFile(app, path) {
   const file = app.vault.getFileByPath(path);
   if (!file) throw new Error(`\u627E\u4E0D\u5230\u6587\u4EF6\uFF1A${path}`);
@@ -7495,51 +7585,51 @@ async function writeFrontmatterWithExpectedHash(app, path, expectedHash, mutate)
   });
   return { path, changed: next !== before, oldHash: expectedHash, newHash: sha256(next) };
 }
-async function createProjectBundle(app, input, directories = {}) {
+async function createProjectBundle(app, input, directories = {}, templatePaths = {}) {
   const text = createProjectBundleText(input, directories);
   validateMarkdownPath(text.projectPath);
   validateMarkdownPath(text.problemPath);
-  if (app.vault.getAbstractFileByPath(text.projectPath) || app.vault.getAbstractFileByPath(text.problemPath)) throw new Error("\u9879\u76EE\u6216\u9996\u4E2A\u95EE\u9898\u6587\u4EF6\u5DF2\u5B58\u5728\uFF0C\u672A\u521B\u5EFA\u4EFB\u4F55\u6587\u4EF6\u3002");
-  await app.vault.create(text.problemPath, text.problem);
+  if (app.vault.getAbstractFileByPath(text.projectPath) || app.vault.getAbstractFileByPath(text.problemPath)) throw new Error("Project or first problem already exists.");
+  const projectName = input.name.trim(), problemTitle = input.firstProblem.trim();
+  const variables = { title: projectName, name: projectName, goal: input.goal.trim(), question: problemTitle, project: projectName, projectPath: text.projectPath, problem: problemTitle, problemPath: text.problemPath, status: "proposed", stage: "inbox", researchRole: "mainline", date: localDate(), content: "" };
+  let problemPrepared;
+  let projectPrepared;
   try {
-    await app.vault.create(text.projectPath, text.project);
+    problemPrepared = await prepareNote(app, templatePaths.problem, directories.problemDirectories?.[0] ?? "Problems", basename(text.problemPath), variables, text.problem, { type: "problem", project: "[[" + basename(text.projectPath) + "]]", up: "[[" + basename(text.projectPath) + "]]", status: "exploring", stage: "inbox", research_role: "mainline" });
+    projectPrepared = await prepareNote(app, templatePaths.project, directories.projectDirectories?.[0] ?? "Projects", basename(text.projectPath), variables, text.project, { type: "project", title: projectName, status: "proposed", current_gate: input.goal.trim(), problems: ["[[" + basename(text.problemPath) + "]]"], focus_problems: ["[[" + basename(text.problemPath) + "]]"] });
   } catch (error) {
-    const created = app.vault.getAbstractFileByPath(text.problemPath);
+    for (const prepared of [problemPrepared, projectPrepared]) {
+      const file = prepared?.createdByTemplater ? app.vault.getAbstractFileByPath(prepared.path) : null;
+      if (file && "extension" in file) await app.fileManager.trashFile(file);
+    }
+    throw error;
+  }
+  if (!problemPrepared.createdByTemplater) await app.vault.create(problemPrepared.path, problemPrepared.content);
+  try {
+    if (!projectPrepared.createdByTemplater) await app.vault.create(projectPrepared.path, projectPrepared.content);
+  } catch (error) {
+    const created = app.vault.getAbstractFileByPath(problemPrepared.path);
     if (created && "extension" in created) await app.fileManager.trashFile(created);
-    throw new Error(`\u9879\u76EE\u521B\u5EFA\u5931\u8D25\uFF0C\u5DF2\u56DE\u6EDA\u9996\u4E2A\u95EE\u9898\u6587\u4EF6\uFF1A${String(error)}`);
+    throw new Error("Project creation failed and the first problem was rolled back: " + String(error));
   }
   return { projectPath: text.projectPath, problemPath: text.problemPath };
 }
-async function createProblemForProject(app, projectPath, input, directories = {}) {
+async function createProblemForProject(app, projectPath, input, directories = {}, templatePaths = {}) {
   const safe = input.title.trim();
-  const problemPath = `${directories.problemDirectories?.[0] ?? "Problems"}/${safe}.md`;
+  const problemPath = (directories.problemDirectories?.[0] ?? "Problems") + "/" + safe + ".md";
   validateMarkdownPath(problemPath);
-  if (app.vault.getAbstractFileByPath(problemPath)) throw new Error("\u7814\u7A76\u95EE\u9898\u6587\u4EF6\u5DF2\u5B58\u5728\uFF0C\u672A\u521B\u5EFA\u4EFB\u4F55\u6587\u4EF6\u3002");
+  if (app.vault.getAbstractFileByPath(problemPath)) throw new Error("Problem file already exists.");
   const project = await readTFile(app, projectPath);
   const projectRaw = await app.vault.read(project);
   const projectTitle = project.basename;
-  const content = `---
-type: problem
-tags: [research, problem]
-project: "[[${projectTitle}]]"
-status: ${input.status}
-stage: ${input.stage}
-research_role: ${input.researchRole}
----
-# ${safe}
-
-## Overview
-
-${input.question}
-
-## Next Step
-
-`;
-  const created = await app.vault.create(problemPath, content);
+  const builtIn = '---\ntype: problem\ntags: [research, problem]\nproject: "[[' + projectTitle + ']]"\nstatus: ' + input.status + "\nstage: " + input.stage + "\nresearch_role: " + input.researchRole + "\n---\n# " + safe + "\n\n## Overview\n\n" + input.question + "\n\n## Next Step\n\n";
+  const prepared = await prepareNote(app, templatePaths.problem, directories.problemDirectories?.[0] ?? "Problems", safe, { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: localDate(), goal: "", content: "" }, builtIn, { type: "problem", project: "[[" + projectTitle + "]]", status: input.status, stage: input.stage, research_role: input.researchRole });
+  const created = prepared.createdByTemplater ? app.vault.getFileByPath(problemPath) : await app.vault.create(problemPath, prepared.content);
+  if (!created) throw new Error("\u65E0\u6CD5\u53D6\u5F97\u65B0\u5EFA\u7684\u95EE\u9898\u6587\u4EF6\u3002");
   try {
     const links = (frontmatter) => {
       const current = Array.isArray(frontmatter.problems) ? frontmatter.problems.filter((value) => typeof value === "string") : [];
-      const link = `[[${safe}]]`;
+      const link = "[[" + safe + "]]";
       frontmatter.problems = [.../* @__PURE__ */ new Set([...current, link])];
       if (input.focus) {
         const focus = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value) => typeof value === "string") : [];
@@ -7553,6 +7643,16 @@ ${input.question}
   }
   return problemPath;
 }
+async function createTaskEntry(app, input, directory, templatePaths = {}) {
+  const title = input.title.trim();
+  const path = directory + "/" + title + ".md";
+  validateMarkdownPath(path);
+  if (app.vault.getAbstractFileByPath(path)) throw new Error("Task file already exists.");
+  const builtIn = '---\nstatus: open\ntags: [task]\nprojects: ["[[' + input.project + ']]"]\n---\n# ' + title + "\n";
+  const prepared = await prepareNote(app, templatePaths.task, directory, title, { title, name: title, project: input.project, projectPath: input.projectPath ?? "", problem: "", problemPath: "", goal: "", question: "", content: "", kind: "task", source: "", status: "open", stage: "", researchRole: "", date: localDate() }, builtIn, { status: "open", tags: ["task"], projects: ["[[" + input.project + "]]"] });
+  if (!prepared.createdByTemplater) await app.vault.create(prepared.path, prepared.content);
+  return path;
+}
 async function updateTask(app, path, input, expectedHash) {
   return writeFrontmatterWithExpectedHash(app, path, expectedHash, (frontmatter) => Object.assign(frontmatter, input));
 }
@@ -7564,7 +7664,7 @@ async function archiveEntity(app, path, expectedHash) {
 async function linkExistingProblemToProject(app, projectPath, problemPath, options) {
   return writeFrontmatterWithExpectedHash(app, projectPath, options.expectedHash, (frontmatter) => {
     const current = Array.isArray(frontmatter.problems) ? frontmatter.problems.filter((value) => typeof value === "string") : [];
-    const link = `[[${problemPath.split("/").pop()?.replace(/\.md$/, "") ?? problemPath}]]`;
+    const link = "[[" + (problemPath.split("/").pop()?.replace(/\.md$/, "") ?? problemPath) + "]]";
     frontmatter.problems = [.../* @__PURE__ */ new Set([...current, link])];
     if (options.focus) {
       const focus = Array.isArray(frontmatter.focus_problems) ? frontmatter.focus_problems.filter((value) => typeof value === "string") : [];
@@ -7922,7 +8022,7 @@ var InboxAssociationsModal = class extends import_obsidian9.Modal {
 function associationLinks(values) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean).map((value) => value.startsWith("[[") && value.endsWith("]]") ? value : `[[${value}]]`))];
 }
-async function createInboxEntry(app, input, directory) {
+async function createInboxEntry(app, input, directory, templatePaths = {}) {
   if (!directory?.trim()) throw new Error("\u8BF7\u5148\u914D\u7F6E\u5F85\u8BA8\u8BBA\u8F93\u5165\u76EE\u5F55\u3002");
   validateMarkdownPath(`${directory}/entry.md`);
   const folder = app.vault.getAbstractFileByPath(directory);
@@ -7930,19 +8030,29 @@ async function createInboxEntry(app, input, directory) {
   const title = input.title.trim();
   if (!title) throw new Error("\u8BF7\u8F93\u5165\u8D44\u6599\u6807\u9898\u3002");
   if (!["paper", "idea", "note"].includes(input.kind)) throw new Error("\u8BF7\u9009\u62E9\u8D44\u6599\u7C7B\u578B\u3002");
-  const basename = title.replace(/[\\/:*?"<>|\[\]#^]/g, "-").replace(/^\.+/, "").trim();
-  if (!basename) throw new Error("\u8BF7\u8F93\u5165\u6709\u6548\u7684\u8D44\u6599\u6807\u9898\u3002");
-  let path = `${directory}/${basename}.md`;
-  for (let suffix = 2; app.vault.getAbstractFileByPath(path); suffix++) path = `${directory}/${basename} (${suffix}).md`;
+  const basename2 = title.replace(/[\\/:*?"<>|\[\]#^]/g, "-").replace(/^\.+/, "").trim();
+  if (!basename2) throw new Error("\u8BF7\u8F93\u5165\u6709\u6548\u7684\u8D44\u6599\u6807\u9898\u3002");
+  let path = `${directory}/${basename2}.md`;
+  for (let suffix = 2; app.vault.getAbstractFileByPath(path); suffix++) path = `${directory}/${basename2} (${suffix}).md`;
   validateMarkdownPath(path);
   const fields = { type: "inbox", title, input_kind: input.kind, pending: true, processing_status: "pending", projects: associationLinks(input.projects), problems: associationLinks(input.problems), source: input.sourceValue.trim() };
-  await app.vault.create(path, `---
-${stringify3(fields).trim()}
----
-# ${title}
-
-${input.content.trim()}
-`);
+  const builtIn = ["---", stringify3(fields).trim(), "---", "# " + title, "", input.content.trim(), ""].join(String.fromCharCode(10));
+  const template = templatePaths[input.kind];
+  const linkContext = (values) => {
+    const value = values.find((item) => item.trim());
+    const path2 = value?.replace(/^\[\[/, "").replace(/\]\]$/, "") ?? "";
+    return { path: path2, title: path2.split("/").pop()?.replace(/\.md$/, "") ?? "" };
+  };
+  const projectRef = linkContext(input.projects), problemRef = linkContext(input.problems);
+  if (template) {
+    const rendered = await createConfiguredNote(app, template, directory, basename2, { title, name: title, content: input.content.trim(), kind: input.kind, source: input.sourceValue.trim(), project: projectRef.title, projectPath: projectRef.path, problem: problemRef.title, problemPath: problemRef.path, goal: "", question: "", status: "pending", stage: "", researchRole: "", date: localDate() }, builtIn);
+    const next = applyFrontmatterPatch(rendered.content, fields);
+    if (rendered.usedTemplater) {
+      const file = app.vault.getFileByPath(rendered.path);
+      if (!file) throw new Error("\u65E0\u6CD5\u53D6\u5F97\u6A21\u677F\u521B\u5EFA\u7684 Inbox \u6587\u4EF6\u3002");
+      await app.vault.modify(file, next);
+    } else await app.vault.create(rendered.path, next);
+  } else await app.vault.create(path, applyFrontmatterPatch(builtIn, fields));
   return path;
 }
 function updateInboxAssociations(app, path, expectedHash, links) {
@@ -8487,6 +8597,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     this.columnStorage = columnStorage;
     __publicField(this, "dataScope");
     __publicField(this, "columnPreferences");
+    __publicField(this, "templatePaths");
     __publicField(this, "columnController");
     __publicField(this, "columnRoot");
     __publicField(this, "snapshot", null);
@@ -8512,6 +8623,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     this.workbenchLeaf = leaf;
     this.dataScope = resolveDataScope(dataScope);
     this.columnPreferences = normalizeColumnPreferences(columnStorage.preferences);
+    this.templatePaths = normalizeTemplatePaths(columnStorage.templatePaths);
   }
   getViewType() {
     return VIEW_TYPE_RESEARCH_WORKBENCH;
@@ -8532,6 +8644,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     });
     const changed = (path) => {
       if (this.disposed) return;
+      if (this.isTemplatePath(path)) return;
       const directories = allDataDirectories(this.dataScope);
       if (isPathInDirectories(path, directories) || directories.some((directory) => directory.startsWith(`${path}/`))) {
         this.dirtyPaths.add(path);
@@ -8600,6 +8713,12 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     this.columnPreferences = normalizeColumnPreferences(value);
     this.columnController?.update(this.columnPreferences);
   }
+  setTemplatePaths(value) {
+    this.templatePaths = normalizeTemplatePaths(value);
+  }
+  isTemplatePath(path) {
+    return Object.values(this.templatePaths).some((templatePath) => templatePath === path);
+  }
   requireDirectory(key) {
     const directory = this.dataScope[key][0];
     const labels = { projectDirectories: "\u9879\u76EE", problemDirectories: "\u95EE\u9898", taskDirectories: "\u4EFB\u52A1", inputDirectories: "\u5F85\u8BA8\u8BBA\u8F93\u5165", recordDirectories: "\u8FDB\u5C55\u8BB0\u5F55" };
@@ -8608,7 +8727,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
   }
   async files(generation = this.lifecycleVersion) {
     const directories = allDataDirectories(this.dataScope);
-    const files = this.app.vault.getMarkdownFiles().filter((file) => isPathInDirectories(file.path, directories));
+    const files = this.app.vault.getMarkdownFiles().filter((file) => !this.isTemplatePath(file.path) && isPathInDirectories(file.path, directories));
     const forced = new Set(this.dirtyPaths);
     this.dirtyPaths.clear();
     return this.fileCache.load(files, (file) => this.app.vault.read(file), forced, () => !this.disposed && generation === this.lifecycleVersion);
@@ -8838,7 +8957,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
       return;
     }
     new InboxCaptureModal(this.app, { mode, kind: mode === "new" ? "idea" : "note", context, candidates: this.candidates(), submit: async (input) => {
-      const path = await createInboxEntry(this.app, input, directory);
+      const path = await createInboxEntry(this.app, input, directory, this.templatePaths);
       await this.refreshAffected(path);
     } }).open();
   }
@@ -9026,7 +9145,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
       return;
     }
     new ProjectWizard(this.app, async (result) => {
-      const created = await createProjectBundle(this.app, result, this.dataScope);
+      const created = await createProjectBundle(this.app, result, this.dataScope, this.templatePaths);
       this.projectPath = created.projectPath;
       this.state.projectPath = created.projectPath;
       await this.refresh();
@@ -9042,7 +9161,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
     }
     new ProblemModal(this.app, async (result) => {
       if (!this.snapshot) return;
-      const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: "inbox", stage: "inbox", researchRole: "mainline", focus: false }, this.dataScope);
+      const path = await createProblemForProject(this.app, this.projectPath, { title: result.title, question: result.question, status: "inbox", stage: "inbox", researchRole: "mainline", focus: false }, this.dataScope, this.templatePaths);
       await this.refresh();
       await this.openFile(path);
     }).open();
@@ -9056,14 +9175,7 @@ var ResearchWorkbenchView = class extends import_obsidian10.ItemView {
       return;
     }
     new TaskModal(this.app, async (title) => {
-      const path = `${directory}/${title.trim()}.md`;
-      await this.app.vault.create(path, `---
-status: open
-tags: [task]
-projects: ["[[${this.snapshot?.project.title ?? "Project"}]]"]
----
-# ${title.trim()}
-`);
+      await createTaskEntry(this.app, { title, project: this.snapshot?.project.title ?? "Project", projectPath: this.projectPath }, directory, this.templatePaths);
       await this.refresh();
     }).open();
   }
@@ -9099,7 +9211,7 @@ projects: ["[[${this.snapshot?.project.title ?? "Project"}]]"]
 var import_obsidian11 = require("obsidian");
 
 // src/ui/settings-model.ts
-var DEFAULT_SETTINGS = { density: "comfortable", accentMode: "theme", tagMode: "full", rightRail: "fixed", iconStyle: "linear", columnLayout: normalizeColumnPreferences(), ...DEFAULT_DATA_SCOPE };
+var DEFAULT_SETTINGS = { density: "comfortable", accentMode: "theme", rightRail: "fixed", tagMode: "full", iconStyle: "linear", columnLayout: normalizeColumnPreferences(), templatePaths: DEFAULT_TEMPLATE_PATHS, ...DEFAULT_DATA_SCOPE };
 
 // src/ui/settings.ts
 var ResearchWorkbenchSettingTab = class extends import_obsidian11.PluginSettingTab {
@@ -9128,6 +9240,19 @@ var ResearchWorkbenchSettingTab = class extends import_obsidian11.PluginSettingT
       plugin.settings.iconStyle = value;
       await plugin.saveSettings();
     }));
+    new import_obsidian11.Setting(this.containerEl).setName("Templates").setHeading();
+    const templateSetting = (name, key) => {
+      new import_obsidian11.Setting(this.containerEl).setName(name).setDesc("Vault \u5185\u76F8\u5BF9 Markdown \u8DEF\u5F84\uFF1B\u7559\u7A7A\u4F7F\u7528\u5185\u7F6E\u6A21\u677F\u3002").addText((text) => text.setValue(plugin.settings.templatePaths[key]).onChange(async (value) => {
+        plugin.settings.templatePaths = normalizeTemplatePaths({ ...plugin.settings.templatePaths, [key]: value });
+        await plugin.saveSettings();
+      }));
+    };
+    templateSetting("\u9879\u76EE\u6A21\u677F", "project");
+    templateSetting("\u95EE\u9898\u6A21\u677F", "problem");
+    templateSetting("\u4EFB\u52A1\u6A21\u677F", "task");
+    templateSetting("\u8BBA\u6587\u6A21\u677F", "paper");
+    templateSetting("\u60F3\u6CD5\u6A21\u677F", "idea");
+    templateSetting("\u7B14\u8BB0\u6A21\u677F", "note");
     new import_obsidian11.Setting(this.containerEl).setName("Data scope").setHeading();
     const directorySetting = (name, description, key) => {
       new import_obsidian11.Setting(this.containerEl).setName(name).setDesc(description).addText((text) => text.setValue(plugin.settings[key].join(", ")).onChange(async (value) => {
@@ -9153,8 +9278,8 @@ var ResearchWorkbenchPlugin = class extends import_obsidian12.Plugin {
   }
   async onload() {
     const loaded = await this.loadData() ?? {};
-    this.settings = { ...DEFAULT_SETTINGS, ...loaded, columnLayout: normalizeColumnPreferences(loaded.columnLayout) };
-    this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf, this.settings, { preferences: this.settings.columnLayout, save: (value) => this.saveColumnPreferences(value) }));
+    this.settings = { ...DEFAULT_SETTINGS, ...loaded, columnLayout: normalizeColumnPreferences(loaded.columnLayout), templatePaths: normalizeTemplatePaths(loaded.templatePaths) };
+    this.registerView(VIEW_TYPE_RESEARCH_WORKBENCH, (leaf) => new ResearchWorkbenchView(leaf, this.settings, { preferences: this.settings.columnLayout, templatePaths: this.settings.templatePaths, save: (value) => this.saveColumnPreferences(value) }));
     this.addSettingTab(new ResearchWorkbenchSettingTab(this.app, this));
     this.addCommand({ id: "open-workbench", name: "Open workbench", callback: () => void this.activate() });
     this.addCommand({ id: "create-project", name: "Create project", callback: () => void this.withView((view) => view.openProjectWizard()) });
@@ -9174,6 +9299,7 @@ var ResearchWorkbenchPlugin = class extends import_obsidian12.Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RESEARCH_WORKBENCH)) if (leaf.view instanceof ResearchWorkbenchView) {
       leaf.view.setDataScope(this.settings);
       leaf.view.setColumnPreferences(this.settings.columnLayout);
+      leaf.view.setTemplatePaths(this.settings.templatePaths);
     }
     await this.writeSettings();
   }
