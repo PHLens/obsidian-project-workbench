@@ -7408,6 +7408,9 @@ function localDate(date = /* @__PURE__ */ new Date()) {
   const pad = (value) => String(value).padStart(2, "0");
   return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
 }
+function templateUsesTemplater(raw) {
+  return /<%[\s\S]*?%>/.test(raw);
+}
 function normalizeTemplatePaths(value) {
   const source2 = value && typeof value === "object" ? value : {};
   const result = { ...DEFAULT_TEMPLATE_PATHS };
@@ -7450,13 +7453,24 @@ function renderTemplate(raw, variables) {
     return variables[name] ?? "";
   });
 }
-async function readTemplate(app, path, variables) {
-  validateTemplatePath(path);
-  const file = app.vault.getFileByPath(path);
-  if (!file || file.extension !== "md") throw new Error("\u627E\u4E0D\u5230\u6A21\u677F\u6587\u4EF6\uFF1A" + path);
-  const rendered = renderTemplate(await app.vault.read(file), variables);
-  frontmatterIsValid(rendered);
-  return rendered;
+async function createConfiguredNote(app, templatePath, directory, filename, variables, fallback) {
+  validateTemplatePath(templatePath);
+  const templateFile = app.vault.getFileByPath(templatePath);
+  if (!templateFile || templateFile.extension !== "md") throw new Error("\u627E\u4E0D\u5230\u6A21\u677F\u6587\u4EF6\uFF1A" + templatePath);
+  const raw = await app.vault.read(templateFile);
+  if (!templateUsesTemplater(raw)) {
+    const content = renderTemplate(raw, variables);
+    frontmatterIsValid(content);
+    return { path: directory + "/" + filename + ".md", content, usedTemplater: false };
+  }
+  const runtime = app.plugins?.getPlugin?.("templater-obsidian")?.templater;
+  if (!runtime || typeof runtime.create_new_note_from_template !== "function") throw new Error("\u5F53\u524D\u6A21\u677F\u9700\u8981 Templater\uFF0C\u4F46\u672A\u627E\u5230\u53EF\u7528\u7684 Templater \u8FD0\u884C\u65F6\u3002");
+  const created = await runtime.create_new_note_from_template(templateFile, directory, filename, false);
+  if (!created || created.path !== directory + "/" + filename + ".md") {
+    if (created && typeof app.vault.delete === "function") await app.vault.delete(created);
+    throw new Error("Templater \u672A\u6309\u9884\u671F\u521B\u5EFA\u76EE\u6807\u6587\u4EF6\uFF0C\u8BF7\u68C0\u67E5\u6A21\u677F\u548C\u76EE\u5F55\u8BBE\u7F6E\u3002");
+  }
+  return { path: created.path, content: await app.vault.read(created), usedTemplater: true };
 }
 
 // src/ui/vault-writes.ts
@@ -7538,12 +7552,20 @@ function applyFrontmatterPatch(raw, patch) {
   const parsed = splitFrontmatter(raw);
   return withFrontmatter(raw, { ...parsed.frontmatter, ...patch }, parsed.body);
 }
-async function renderOrBuiltIn(app, type, variables, builtIn, templatePaths) {
-  const template = templatePaths[type];
-  return template ? readTemplate(app, template, variables) : builtIn;
-}
 function basename(path) {
   return path.split("/").pop()?.replace(/\.md$/, "") ?? path;
+}
+async function prepareNote(app, templatePath, directory, filename, variables, builtIn, patch) {
+  if (!templatePath) return { path: directory + "/" + filename + ".md", content: applyFrontmatterPatch(builtIn, patch), createdByTemplater: false };
+  const rendered = await createConfiguredNote(app, templatePath, directory, filename, variables, builtIn);
+  const content = applyFrontmatterPatch(rendered.content, patch);
+  if (rendered.usedTemplater) {
+    const file = app.vault.getFileByPath(rendered.path);
+    if (!file) throw new Error("Templater \u521B\u5EFA\u7684\u6587\u4EF6\u65E0\u6CD5\u8BFB\u53D6\uFF1A" + rendered.path);
+    await app.vault.modify(file, content);
+    return { path: rendered.path, content, createdByTemplater: true };
+  }
+  return { path: rendered.path, content, createdByTemplater: false };
 }
 async function readTFile(app, path) {
   const file = app.vault.getFileByPath(path);
@@ -7570,15 +7592,23 @@ async function createProjectBundle(app, input, directories = {}, templatePaths =
   if (app.vault.getAbstractFileByPath(text.projectPath) || app.vault.getAbstractFileByPath(text.problemPath)) throw new Error("Project or first problem already exists.");
   const projectName = input.name.trim(), problemTitle = input.firstProblem.trim();
   const variables = { title: projectName, name: projectName, goal: input.goal.trim(), question: problemTitle, project: projectName, projectPath: text.projectPath, problem: problemTitle, problemPath: text.problemPath, status: "proposed", stage: "inbox", researchRole: "mainline", date: localDate(), content: "" };
-  const projectTemplate = await renderOrBuiltIn(app, "project", variables, text.project, templatePaths);
-  const problemTemplate = await renderOrBuiltIn(app, "problem", variables, text.problem, templatePaths);
-  const projectText = applyFrontmatterPatch(projectTemplate, { type: "project", title: projectName, status: "proposed", current_gate: input.goal.trim(), problems: ["[[" + basename(text.problemPath) + "]]"], focus_problems: ["[[" + basename(text.problemPath) + "]]"] });
-  const problemText = applyFrontmatterPatch(problemTemplate, { type: "problem", project: "[[" + basename(text.projectPath) + "]]", up: "[[" + basename(text.projectPath) + "]]", status: "exploring", stage: "inbox", research_role: "mainline" });
-  await app.vault.create(text.problemPath, problemText);
+  let problemPrepared;
+  let projectPrepared;
   try {
-    await app.vault.create(text.projectPath, projectText);
+    problemPrepared = await prepareNote(app, templatePaths.problem, directories.problemDirectories?.[0] ?? "Problems", basename(text.problemPath), variables, text.problem, { type: "problem", project: "[[" + basename(text.projectPath) + "]]", up: "[[" + basename(text.projectPath) + "]]", status: "exploring", stage: "inbox", research_role: "mainline" });
+    projectPrepared = await prepareNote(app, templatePaths.project, directories.projectDirectories?.[0] ?? "Projects", basename(text.projectPath), variables, text.project, { type: "project", title: projectName, status: "proposed", current_gate: input.goal.trim(), problems: ["[[" + basename(text.problemPath) + "]]"], focus_problems: ["[[" + basename(text.problemPath) + "]]"] });
   } catch (error) {
-    const created = app.vault.getAbstractFileByPath(text.problemPath);
+    for (const prepared of [problemPrepared, projectPrepared]) {
+      const file = prepared?.createdByTemplater ? app.vault.getAbstractFileByPath(prepared.path) : null;
+      if (file && "extension" in file) await app.fileManager.trashFile(file);
+    }
+    throw error;
+  }
+  if (!problemPrepared.createdByTemplater) await app.vault.create(problemPrepared.path, problemPrepared.content);
+  try {
+    if (!projectPrepared.createdByTemplater) await app.vault.create(projectPrepared.path, projectPrepared.content);
+  } catch (error) {
+    const created = app.vault.getAbstractFileByPath(problemPrepared.path);
     if (created && "extension" in created) await app.fileManager.trashFile(created);
     throw new Error("Project creation failed and the first problem was rolled back: " + String(error));
   }
@@ -7593,8 +7623,9 @@ async function createProblemForProject(app, projectPath, input, directories = {}
   const projectRaw = await app.vault.read(project);
   const projectTitle = project.basename;
   const builtIn = '---\ntype: problem\ntags: [research, problem]\nproject: "[[' + projectTitle + ']]"\nstatus: ' + input.status + "\nstage: " + input.stage + "\nresearch_role: " + input.researchRole + "\n---\n# " + safe + "\n\n## Overview\n\n" + input.question + "\n\n## Next Step\n\n";
-  const content = await renderOrBuiltIn(app, "problem", { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: localDate(), goal: "", content: "" }, builtIn, templatePaths);
-  const created = await app.vault.create(problemPath, applyFrontmatterPatch(content, { type: "problem", project: "[[" + projectTitle + "]]", status: input.status, stage: input.stage, research_role: input.researchRole }));
+  const prepared = await prepareNote(app, templatePaths.problem, directories.problemDirectories?.[0] ?? "Problems", safe, { title: safe, name: safe, question: input.question, project: projectTitle, projectPath, problem: safe, problemPath, status: input.status, stage: input.stage, researchRole: input.researchRole, date: localDate(), goal: "", content: "" }, builtIn, { type: "problem", project: "[[" + projectTitle + "]]", status: input.status, stage: input.stage, research_role: input.researchRole });
+  const created = prepared.createdByTemplater ? app.vault.getFileByPath(problemPath) : await app.vault.create(problemPath, prepared.content);
+  if (!created) throw new Error("\u65E0\u6CD5\u53D6\u5F97\u65B0\u5EFA\u7684\u95EE\u9898\u6587\u4EF6\u3002");
   try {
     const links = (frontmatter) => {
       const current = Array.isArray(frontmatter.problems) ? frontmatter.problems.filter((value) => typeof value === "string") : [];
@@ -7618,8 +7649,8 @@ async function createTaskEntry(app, input, directory, templatePaths = {}) {
   validateMarkdownPath(path);
   if (app.vault.getAbstractFileByPath(path)) throw new Error("Task file already exists.");
   const builtIn = '---\nstatus: open\ntags: [task]\nprojects: ["[[' + input.project + ']]"]\n---\n# ' + title + "\n";
-  const rendered = await renderOrBuiltIn(app, "task", { title, name: title, project: input.project, projectPath: input.projectPath ?? "", problem: "", problemPath: "", goal: "", question: "", content: "", kind: "task", source: "", status: "open", stage: "", researchRole: "", date: localDate() }, builtIn, templatePaths);
-  await app.vault.create(path, applyFrontmatterPatch(rendered, { status: "open", tags: ["task"], projects: ["[[" + input.project + "]]"] }));
+  const prepared = await prepareNote(app, templatePaths.task, directory, title, { title, name: title, project: input.project, projectPath: input.projectPath ?? "", problem: "", problemPath: "", goal: "", question: "", content: "", kind: "task", source: "", status: "open", stage: "", researchRole: "", date: localDate() }, builtIn, { status: "open", tags: ["task"], projects: ["[[" + input.project + "]]"] });
+  if (!prepared.createdByTemplater) await app.vault.create(prepared.path, prepared.content);
   return path;
 }
 async function updateTask(app, path, input, expectedHash) {
@@ -8013,8 +8044,15 @@ async function createInboxEntry(app, input, directory, templatePaths = {}) {
     return { path: path2, title: path2.split("/").pop()?.replace(/\.md$/, "") ?? "" };
   };
   const projectRef = linkContext(input.projects), problemRef = linkContext(input.problems);
-  const rendered = template ? await readTemplate(app, template, { title, name: title, content: input.content.trim(), kind: input.kind, source: input.sourceValue.trim(), project: projectRef.title, projectPath: projectRef.path, problem: problemRef.title, problemPath: problemRef.path, goal: "", question: "", status: "pending", stage: "", researchRole: "", date: localDate() }) : builtIn;
-  await app.vault.create(path, applyFrontmatterPatch(rendered, fields));
+  if (template) {
+    const rendered = await createConfiguredNote(app, template, directory, basename2, { title, name: title, content: input.content.trim(), kind: input.kind, source: input.sourceValue.trim(), project: projectRef.title, projectPath: projectRef.path, problem: problemRef.title, problemPath: problemRef.path, goal: "", question: "", status: "pending", stage: "", researchRole: "", date: localDate() }, builtIn);
+    const next = applyFrontmatterPatch(rendered.content, fields);
+    if (rendered.usedTemplater) {
+      const file = app.vault.getFileByPath(rendered.path);
+      if (!file) throw new Error("\u65E0\u6CD5\u53D6\u5F97\u6A21\u677F\u521B\u5EFA\u7684 Inbox \u6587\u4EF6\u3002");
+      await app.vault.modify(file, next);
+    } else await app.vault.create(rendered.path, next);
+  } else await app.vault.create(path, applyFrontmatterPatch(builtIn, fields));
   return path;
 }
 function updateInboxAssociations(app, path, expectedHash, links) {
